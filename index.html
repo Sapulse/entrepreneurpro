@@ -1,0 +1,2155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>EntrepreneurPRO V14.1</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.anim { animation: fadeIn 0.2s ease-out; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body class="bg-gray-50">
+<div id="root"></div>
+<script type="text/babel">
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const APP_VERSION = "V14.1 – ERP & TRÉSORERIE";
+const SCHEMA_VERSION = 2;
+const LS_KEY = "entrepreneurpro_v14_data";
+const CONTRACT_STATUSES = ['En cours', 'Terminé', 'Annulé'];
+const TASK_STATUSES = ['À faire', 'En cours', 'Terminé'];
+const TASK_PRIORITIES = ['Haute', 'Moyenne', 'Basse'];
+const CRM_STAGES = ['Contact', 'RDV 1', 'Devis', 'Négociation', 'Client'];
+const ACTION_TYPES = ['Note', 'RDV', 'Appel', 'Email', 'Livraison', 'Relance'];
+const TX_TYPES = ['Achat', 'Sortie', 'Apport', 'Entrée'];
+const ASSIGNEES = ['Micka', 'César'];
+const PAYMENT_AUTHORS = ['Micka', 'César', 'Client'];
+const SOURCES = ['Réseau', 'LinkedIn', 'Referral', 'Cold Email', 'Site Web', 'Autre'];
+const EXPENSE_CATEGORIES = ['Transport', 'Repas', 'Logiciels', 'Matériel', 'Formation', 'Marketing', 'Autre'];
+
+const BADGE_COLORS = {
+  'En cours': 'bg-blue-100 text-blue-700',
+  'Terminé': 'bg-green-100 text-green-700',
+  'Annulé': 'bg-red-100 text-red-700',
+  'Non payé': 'bg-red-100 text-red-700',
+  'Partiel': 'bg-amber-100 text-amber-700',
+  'Payé': 'bg-green-100 text-green-700',
+  'À faire': 'bg-slate-100 text-slate-700',
+  'Validé': 'bg-green-100 text-green-700',
+  'Contact': 'bg-slate-100 text-slate-700',
+  'RDV 1': 'bg-blue-100 text-blue-700',
+  'Devis': 'bg-amber-100 text-amber-700',
+  'Négociation': 'bg-purple-100 text-purple-700',
+  'Client': 'bg-green-100 text-green-700',
+  'Haute': 'bg-red-100 text-red-700',
+  'Moyenne': 'bg-amber-100 text-amber-700',
+  'Basse': 'bg-green-100 text-green-700',
+  'Micka': 'bg-indigo-100 text-indigo-700',
+  'César': 'bg-emerald-100 text-emerald-700',
+};
+
+// ============================================================
+// UTILITIES
+// ============================================================
+const genId = () => 'id_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2,5);
+const todayStr = () => new Date().toISOString().split('T')[0];
+const fmt = (n) => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n||0);
+const normalize = (s) => (s||'').trim().replace(/\s+/g,' ').toLowerCase();
+const formatDate = (d) => d ? new Date(d+'T00:00:00').toLocaleDateString('fr-FR') : '';
+const daysUntil = (dateStr) => { if(!dateStr) return null; return Math.ceil((new Date(dateStr+'T23:59:59')-new Date())/(1000*60*60*24)); };
+const calcPaymentStatus = (montant, payments) => { const total=(payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0); if(total<=0)return'Non payé'; if(total>=montant)return'Payé'; return'Partiel'; };
+const currentMonthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
+
+// ============================================================
+// INITIAL DATA
+// ============================================================
+const INITIAL_DATA = {
+  schemaVersion: 2,
+  contracts: [
+    {id:"c001",clientId:"cl001",client:"TechCorp",prestation:"Développement Web React",montant:5000,assignedTo:"Micka",statut:"En cours",dateDebut:"2025-01-15",dateFin:"2025-03-28",notes:"Projet React prioritaire",payments:[],actions:[{id:"a001",date:"2025-01-15",type:"Email",titre:"Envoi devis",auteur:"Micka",notes:""}]},
+    {id:"c002",clientId:"cl002",client:"StartupXYZ",prestation:"Conseil Stratégie",montant:3000,assignedTo:"César",statut:"En cours",dateDebut:"2025-02-01",dateFin:"2025-04-15",notes:"",payments:[{id:"p001",date:"2025-02-15",montant:1500,note:"Acompte 50%",auteur:"Client"}],actions:[]}
+  ],
+  clients: [
+    {id:"cl001",entreprise:"TechCorp",nom:"Jean Dupont",email:"jean@techcorp.fr",telephone:"+33 6 12 34 56 78",source:"Réseau",etape:"Client",potentiel:10000,notes:"Client fidèle",dateEntree:"2025-01-10"},
+    {id:"cl002",entreprise:"StartupXYZ",nom:"Marie Martin",email:"marie@startupxyz.com",telephone:"",source:"LinkedIn",etape:"Négociation",potentiel:8000,notes:"",dateEntree:"2025-02-01"},
+    {id:"cl003",entreprise:"BioMed Paris",nom:"Paul Blanc",email:"paul@biomed.fr",telephone:"+33 1 42 00 11 22",source:"Referral",etape:"Devis",potentiel:15000,notes:"Grosse opportunité",dateEntree:"2025-02-15"}
+  ],
+  tasks: [
+    {id:"t001",titre:"Préparer devis TechCorp v2",client:"TechCorp",assignedTo:"Micka",statut:"À faire",priorite:"Haute",echeance:"2025-03-10",notes:""},
+    {id:"t002",titre:"Appel de suivi StartupXYZ",client:"StartupXYZ",assignedTo:"César",statut:"En cours",priorite:"Moyenne",echeance:"2025-03-05",notes:"Confirmer la deuxième phase"}
+  ],
+  expenses: [],
+  bank: {
+    initialBalance: 2500,
+    transactions: [],
+    subscriptions: [
+      {id:"sub001",name:"Figma",amount:15,day:1,category:"Logiciels",active:true},
+      {id:"sub002",name:"GitHub Pro",amount:4,day:1,category:"Logiciels",active:true},
+      {id:"sub003",name:"Notion",amount:8,day:5,category:"Logiciels",active:true}
+    ]
+  },
+  config: {
+    driveLinks: {
+      "Google Drive": "https://drive.google.com",
+      "Notion": "https://notion.so",
+      "Calendly": "https://calendly.com",
+      "Linear": "https://linear.app"
+    }
+  }
+};
+
+// ============================================================
+// STORAGE
+// ============================================================
+function securizeData(d) {
+  if(!d) d = {};
+  if(!Array.isArray(d.contracts)) d.contracts = [];
+  if(!Array.isArray(d.clients)) d.clients = [];
+  if(!Array.isArray(d.tasks)) d.tasks = [];
+  if(!Array.isArray(d.expenses)) d.expenses = [];
+  if(!d.bank) d.bank = {initialBalance:0, transactions:[], subscriptions:[]};
+  if(typeof d.bank.initialBalance !== 'number') d.bank.initialBalance = 0;
+  if(!Array.isArray(d.bank.transactions)) d.bank.transactions = [];
+  if(!Array.isArray(d.bank.subscriptions)) d.bank.subscriptions = [];
+  if(!d.config) d.config = {driveLinks:{}};
+  if(!d.config.driveLinks) d.config.driveLinks = {};
+  d.contracts.forEach(c => {
+    if(!Array.isArray(c.payments)) c.payments = [];
+    if(!Array.isArray(c.actions)) c.actions = [];
+  });
+  return d;
+}
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return securizeData(JSON.parse(JSON.stringify(INITIAL_DATA)));
+    const parsed = JSON.parse(raw);
+    return securizeData(parsed);
+  } catch(e) {
+    return securizeData(JSON.parse(JSON.stringify(INITIAL_DATA)));
+  }
+}
+
+function saveData(d) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(d)); } catch(e) {}
+}
+
+function doExport(data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `entrepreneurpro_export_${todayStr()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function doImport(file, onSuccess, onError) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      const required = ['contracts','clients','tasks','expenses','bank'];
+      for(const k of required) {
+        if(!(k in parsed)) { onError('Fichier invalide: clé manquante ' + k); return; }
+      }
+      delete parsed.passwords;
+      parsed.schemaVersion = 2;
+      onSuccess(securizeData(parsed));
+    } catch(err) {
+      onError('Erreur de parsing JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ============================================================
+// TOAST SYSTEM
+// ============================================================
+const ToastContext = React.createContext(null);
+
+function ToastProvider({children}) {
+  const [toasts, setToasts] = React.useState([]);
+  const addToast = React.useCallback((msg, type='info') => {
+    const id = genId();
+    setToasts(prev => [...prev, {id, msg, type}]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  }, []);
+  const colors = {success:'bg-green-500', error:'bg-red-500', info:'bg-blue-500'};
+  return (
+    <ToastContext.Provider value={addToast}>
+      {children}
+      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+        {toasts.map(t => (
+          <div key={t.id} className={`anim px-4 py-3 rounded-lg text-white text-sm shadow-lg ${colors[t.type]||colors.info} pointer-events-auto`}>
+            {t.msg}
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+function useToast() { return React.useContext(ToastContext); }
+
+// ============================================================
+// MODAL
+// ============================================================
+function Modal({open, onClose, title, children, size='md'}) {
+  React.useEffect(() => {
+    if(!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handler = (e) => { if(e.key==='Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => { document.body.style.overflow = prev; document.removeEventListener('keydown', handler); };
+  }, [open, onClose]);
+
+  if(!open) return null;
+  const sizes = {sm:'max-w-md', md:'max-w-2xl', lg:'max-w-4xl', xl:'max-w-6xl'};
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-10 overflow-y-auto">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose}/>
+      <div className={`relative bg-white rounded-2xl shadow-2xl w-full ${sizes[size]||sizes.md} anim my-auto`}>
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+        <div className="px-6 py-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmModal({open, onClose, onConfirm, title, message}) {
+  return (
+    <Modal open={open} onClose={onClose} title={title||'Confirmation'} size="sm">
+      <p className="text-gray-600 mb-6">{message||'Êtes-vous sûr ?'}</p>
+      <div className="flex gap-3 justify-end">
+        <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+        <Btn variant="danger" onClick={() => { onConfirm(); onClose(); }}>Confirmer</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================
+// UI COMPONENTS
+// ============================================================
+function StatusBadge({status}) {
+  const cls = BADGE_COLORS[status] || 'bg-gray-100 text-gray-700';
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>{status}</span>;
+}
+
+function ExpiryBadge({dateFin, statut}) {
+  if(statut==='Terminé') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Terminé</span>;
+  if(statut==='Annulé') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Annulé</span>;
+  if(!dateFin) return null;
+  const days = daysUntil(dateFin);
+  if(days === null) return null;
+  if(days < 0) return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">Expiré</span>;
+  if(days <= 7) return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">J-{days}</span>;
+  if(days <= 30) return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">J-{days}</span>;
+  return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">J-{days}</span>;
+}
+
+function Tabs({tabs, active, onChange}) {
+  return (
+    <div className="flex border-b border-gray-200 mb-5">
+      {tabs.map(t => (
+        <button key={t.id} onClick={() => onChange(t.id)}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${active===t.id ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
+const selectCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white";
+const textareaCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none";
+
+function Input({label, required, ...props}) {
+  if(label) return <FormField label={label} required={required}><input className={inputCls} {...props}/></FormField>;
+  return <input className={inputCls} {...props}/>;
+}
+function Select({label, required, children, ...props}) {
+  if(label) return <FormField label={label} required={required}><select className={selectCls} {...props}>{children}</select></FormField>;
+  return <select className={selectCls} {...props}>{children}</select>;
+}
+function Textarea({label, required, rows=3, ...props}) {
+  if(label) return <FormField label={label} required={required}><textarea className={textareaCls} rows={rows} {...props}/></FormField>;
+  return <textarea className={textareaCls} rows={rows} {...props}/>;
+}
+function FormField({label, required, children}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}{required&&<span className="text-red-500 ml-0.5">*</span>}</label>
+      {children}
+    </div>
+  );
+}
+
+function Btn({variant='primary', size='md', children, ...props}) {
+  const variants = {
+    primary: 'bg-blue-600 hover:bg-blue-700 text-white',
+    secondary: 'bg-gray-100 hover:bg-gray-200 text-gray-700',
+    danger: 'bg-red-500 hover:bg-red-600 text-white',
+    success: 'bg-green-500 hover:bg-green-600 text-white',
+    ghost: 'hover:bg-gray-100 text-gray-600',
+    outline: 'border border-gray-300 hover:bg-gray-50 text-gray-700',
+  };
+  const sizes = {sm:'px-2.5 py-1.5 text-xs', md:'px-4 py-2 text-sm', lg:'px-5 py-2.5 text-base'};
+  return (
+    <button className={`inline-flex items-center gap-1.5 rounded-lg font-medium transition-colors ${variants[variant]||variants.primary} ${sizes[size]||sizes.md} disabled:opacity-50 disabled:cursor-not-allowed`} {...props}>
+      {children}
+    </button>
+  );
+}
+
+function KPICard({label, value, sub, color='blue', icon}) {
+  const colors = {blue:'from-blue-50 to-blue-100 text-blue-700', green:'from-green-50 to-green-100 text-green-700', amber:'from-amber-50 to-amber-100 text-amber-700', red:'from-red-50 to-red-100 text-red-700', indigo:'from-indigo-50 to-indigo-100 text-indigo-700', purple:'from-purple-50 to-purple-100 text-purple-700', gray:'from-gray-50 to-gray-100 text-gray-700'};
+  return (
+    <div className={`bg-gradient-to-br ${colors[color]||colors.blue} rounded-xl p-4`}>
+      {icon && <div className="text-2xl mb-1">{icon}</div>}
+      <div className="text-xs font-medium opacity-70 mb-1">{label}</div>
+      <div className="text-xl font-bold">{value}</div>
+      {sub && <div className="text-xs opacity-60 mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+function EmptyState({message, icon='📭'}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+      <div className="text-4xl mb-3">{icon}</div>
+      <div className="text-sm">{message}</div>
+    </div>
+  );
+}
+
+function SectionHeader({title, action}) {
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <h3 className="text-base font-semibold text-gray-800">{title}</h3>
+      {action}
+    </div>
+  );
+}
+
+// ============================================================
+// DASHBOARD MODULE
+// ============================================================
+function Dashboard({data, onNavigate}) {
+  const stats = React.useMemo(() => {
+    const nonAnnule = data.contracts.filter(c => c.statut !== 'Annulé');
+    const caSigne = nonAnnule.reduce((s,c) => s + (Number(c.montant)||0), 0);
+    const caEncaisse = nonAnnule.reduce((s,c) => s + (c.payments||[]).reduce((ps,p) => ps+(Number(p.montant)||0), 0), 0);
+    const reste = caSigne - caEncaisse;
+    const potentiel = data.clients.reduce((s,cl) => s + (Number(cl.potentiel)||0), 0);
+
+    const mickaContracts = nonAnnule.filter(c => c.assignedTo==='Micka');
+    const cesarContracts = nonAnnule.filter(c => c.assignedTo==='César');
+    const netMicka = mickaContracts.reduce((s,c) => s + (c.payments||[]).reduce((ps,p) => ps+(Number(p.montant)||0), 0), 0);
+    const netCesar = cesarContracts.reduce((s,c) => s + (c.payments||[]).reduce((ps,p) => ps+(Number(p.montant)||0), 0), 0);
+    const ecart = Math.abs(netMicka - netCesar);
+    const recommended = ecart > 50 ? (netMicka > netCesar ? 'César' : 'Micka') : null;
+
+    const urgent = data.contracts
+      .filter(c => c.statut === 'En cours' && c.dateFin)
+      .sort((a,b) => new Date(a.dateFin) - new Date(b.dateFin))
+      .slice(0,3);
+
+    return {caSigne, caEncaisse, reste, potentiel, netMicka, netCesar, ecart, recommended, urgent};
+  }, [data]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 mb-2">
+        <h1 className="text-2xl font-bold text-gray-800">Tableau de bord</h1>
+        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{APP_VERSION}</span>
+      </div>
+
+      {/* KPI Row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard label="CA Signé" value={fmt(stats.caSigne)} icon="📄" color="blue"/>
+        <KPICard label="CA Encaissé" value={fmt(stats.caEncaisse)} icon="💰" color="green"/>
+        <KPICard label="Reste à encaisser" value={fmt(stats.reste)} icon="⏳" color="amber"/>
+        <KPICard label="Potentiel Prospects" value={fmt(stats.potentiel)} icon="🎯" color="purple"/>
+      </div>
+
+      {/* Trésorerie Duo */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h2 className="text-base font-semibold text-gray-800 mb-4">💳 Trésorerie Duo</h2>
+        <div className="space-y-4">
+          {/* Micka */}
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-sm font-medium text-indigo-700">Micka</span>
+              <span className="text-sm font-bold text-indigo-700">{fmt(stats.netMicka)}</span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-2">
+              <div className="bg-indigo-500 h-2 rounded-full transition-all" style={{width: (stats.netMicka+stats.netCesar)>0 ? `${Math.round(stats.netMicka/(stats.netMicka+stats.netCesar)*100)}%` : '0%'}}/>
+            </div>
+          </div>
+          {/* César */}
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-sm font-medium text-emerald-700">César</span>
+              <span className="text-sm font-bold text-emerald-700">{fmt(stats.netCesar)}</span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-2">
+              <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{width: (stats.netMicka+stats.netCesar)>0 ? `${Math.round(stats.netCesar/(stats.netMicka+stats.netCesar)*100)}%` : '0%'}}/>
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <span className="text-xs text-gray-500">Écart duo: {fmt(stats.ecart)}</span>
+            {stats.recommended && (
+              <span className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-full font-medium">
+                Prochain encaissement recommandé pour {stats.recommended}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Dossiers urgents */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h2 className="text-base font-semibold text-gray-800 mb-4">🔥 Dossiers urgents</h2>
+        {stats.urgent.length === 0 ? <EmptyState message="Aucun dossier urgent" icon="✅"/> : (
+          <div className="space-y-3">
+            {stats.urgent.map(c => {
+              const ps = calcPaymentStatus(c.montant, c.payments);
+              return (
+                <div key={c.id} onClick={() => onNavigate('contracts', {id:c.id, tab:'paiements'})}
+                  className="flex items-center justify-between p-3 rounded-xl border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
+                  <div>
+                    <div className="text-sm font-medium text-gray-800">{c.client}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{c.prestation}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ExpiryBadge dateFin={c.dateFin} statut={c.statut}/>
+                    <StatusBadge status={ps}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// CONTRACTS MODULE
+// ============================================================
+function QuickClientCreate({onCreated, clients}) {
+  const [form, setForm] = React.useState({entreprise:'', nom:''});
+  const [duplicate, setDuplicate] = React.useState(null);
+  const addToast = useToast();
+
+  const handleCreate = (force=false) => {
+    if(!form.entreprise.trim() || !form.nom.trim()) { addToast('Entreprise et nom requis','error'); return; }
+    if(!force) {
+      const dup = clients.find(c => normalize(c.entreprise)===normalize(form.entreprise));
+      if(dup) { setDuplicate(dup); return; }
+    }
+    const nc = {id:genId(), entreprise:form.entreprise.trim(), nom:form.nom.trim(), email:'', telephone:'', source:'Autre', etape:'Contact', potentiel:0, notes:'', dateEntree:todayStr()};
+    onCreated(nc);
+    setForm({entreprise:'', nom:''});
+    setDuplicate(null);
+  };
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mt-2 space-y-3">
+      <div className="text-xs font-semibold text-blue-700 mb-2">Créer un nouveau client</div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Entreprise *</label>
+          <input className={inputCls} value={form.entreprise} onChange={e=>setForm(f=>({...f,entreprise:e.target.value}))} placeholder="Nom entreprise"/>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Nom contact *</label>
+          <input className={inputCls} value={form.nom} onChange={e=>setForm(f=>({...f,nom:e.target.value}))} placeholder="Prénom Nom"/>
+        </div>
+      </div>
+      {duplicate && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <div className="text-xs text-amber-700 font-medium mb-2">⚠️ Client existant: {duplicate.entreprise} ({duplicate.nom})</div>
+          <div className="flex gap-2">
+            <Btn size="sm" variant="outline" onClick={() => { onCreated(duplicate, true); setDuplicate(null); }}>Utiliser l'existant</Btn>
+            <Btn size="sm" variant="secondary" onClick={() => handleCreate(true)}>Créer quand même</Btn>
+          </div>
+        </div>
+      )}
+      {!duplicate && <Btn size="sm" variant="primary" onClick={() => handleCreate()}>Créer</Btn>}
+    </div>
+  );
+}
+
+function ContractModal({open, onClose, contract, clients, onSave, onDelete, defaultTab='infos'}) {
+  const [tab, setTab] = React.useState(defaultTab);
+  const [form, setForm] = React.useState({});
+  const [showQuickClient, setShowQuickClient] = React.useState(false);
+  const [showAddPayment, setShowAddPayment] = React.useState(false);
+  const [showAddAction, setShowAddAction] = React.useState(false);
+  const [payForm, setPayForm] = React.useState({date:todayStr(),montant:'',auteur:'Client',note:''});
+  const [actForm, setActForm] = React.useState({date:todayStr(),type:'Note',titre:'',auteur:'Micka',notes:''});
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const addToast = useToast();
+
+  React.useEffect(() => {
+    if(open) {
+      setTab(defaultTab||'infos');
+      setShowQuickClient(false);
+      setShowAddPayment(false);
+      setShowAddAction(false);
+      if(contract) {
+        setForm({...contract, payments:[...(contract.payments||[])], actions:[...(contract.actions||[])]});
+      } else {
+        setForm({id:null, clientId:'', client:'', prestation:'', montant:'', assignedTo:'Micka', statut:'En cours', dateDebut:todayStr(), dateFin:'', notes:'', payments:[], actions:[]});
+      }
+      setPayForm({date:todayStr(),montant:'',auteur:'Client',note:''});
+      setActForm({date:todayStr(),type:'Note',titre:'',auteur:'Micka',notes:''});
+    }
+  }, [open, contract, defaultTab]);
+
+  const setF = (k, v) => setForm(f => ({...f, [k]:v}));
+
+  const handleClientSelect = (e) => {
+    const cid = e.target.value;
+    const cl = clients.find(c => c.id===cid);
+    if(cl) setForm(f => ({...f, clientId:cl.id, client:cl.entreprise}));
+    else setForm(f => ({...f, clientId:'', client:''}));
+  };
+
+  const handleQuickClientCreated = (nc, existing=false) => {
+    if(!existing) {
+      setForm(f => ({...f, clientId:nc.id, client:nc.entreprise, _newClient:nc}));
+    } else {
+      setForm(f => ({...f, clientId:nc.id, client:nc.entreprise}));
+    }
+    setShowQuickClient(false);
+  };
+
+  const handleSave = () => {
+    if(!form.client.trim()) { addToast('Client requis','error'); return; }
+    if(!form.prestation.trim()) { addToast('Prestation requise','error'); return; }
+    onSave(form);
+    onClose();
+  };
+
+  const addPayment = () => {
+    if(!payForm.montant || isNaN(Number(payForm.montant))) { addToast('Montant invalide','error'); return; }
+    const p = {...payForm, id:genId(), montant:Number(payForm.montant)};
+    setForm(f => ({...f, payments:[...(f.payments||[]), p]}));
+    setShowAddPayment(false);
+    setPayForm({date:todayStr(),montant:'',auteur:'Client',note:''});
+    addToast('Paiement ajouté','success');
+  };
+
+  const deletePayment = (pid) => setForm(f => ({...f, payments:(f.payments||[]).filter(p=>p.id!==pid)}));
+
+  const addAction = () => {
+    if(!actForm.titre.trim()) { addToast('Titre requis','error'); return; }
+    const a = {...actForm, id:genId()};
+    setForm(f => ({...f, actions:[...(f.actions||[]), a]}));
+    setShowAddAction(false);
+    setActForm({date:todayStr(),type:'Note',titre:'',auteur:'Micka',notes:''});
+    addToast('Action ajoutée','success');
+  };
+
+  const deleteAction = (aid) => setForm(f => ({...f, actions:(f.actions||[]).filter(a=>a.id!==aid)}));
+
+  const paidTotal = (form.payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0);
+  const montantNum = Number(form.montant)||0;
+  const ps = calcPaymentStatus(montantNum, form.payments||[]);
+  const sortedPayments = [...(form.payments||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const sortedActions = [...(form.actions||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+  const tabs = [
+    {id:'infos', label:'Infos'},
+    {id:'paiements', label:`Paiements (${(form.payments||[]).length})`},
+    {id:'suivi', label:`Suivi (${(form.actions||[]).length})`}
+  ];
+
+  return (
+    <Modal open={open} onClose={onClose} title={form.id ? `Contrat – ${form.client}` : 'Nouveau contrat'} size="lg">
+      <Tabs tabs={tabs} active={tab} onChange={setTab}/>
+      {tab==='infos' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Client *</label>
+              <div className="flex gap-2">
+                <select className={selectCls} value={form.clientId||''} onChange={handleClientSelect}>
+                  <option value="">— Sélectionner —</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.entreprise} – {c.nom}</option>)}
+                </select>
+                <Btn size="sm" variant="outline" onClick={() => setShowQuickClient(v=>!v)}>+</Btn>
+              </div>
+              {showQuickClient && <QuickClientCreate clients={clients} onCreated={handleQuickClientCreated}/>}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Prestation *</label>
+              <input className={inputCls} value={form.prestation||''} onChange={e=>setF('prestation',e.target.value)} placeholder="Description de la mission"/>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Montant (€)</label>
+              <input className={inputCls} type="number" value={form.montant||''} onChange={e=>setF('montant',e.target.value)} placeholder="0"/>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Attribué à</label>
+              <select className={selectCls} value={form.assignedTo||'Micka'} onChange={e=>setF('assignedTo',e.target.value)}>
+                {ASSIGNEES.map(a=><option key={a}>{a}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Statut</label>
+              <select className={selectCls} value={form.statut||'En cours'} onChange={e=>setF('statut',e.target.value)}>
+                {CONTRACT_STATUSES.map(s=><option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date début</label>
+              <input className={inputCls} type="date" value={form.dateDebut||''} onChange={e=>setF('dateDebut',e.target.value)}/>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date fin</label>
+              <input className={inputCls} type="date" value={form.dateFin||''} onChange={e=>setF('dateFin',e.target.value)}/>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+            <textarea className={textareaCls} rows={3} value={form.notes||''} onChange={e=>setF('notes',e.target.value)}/>
+          </div>
+          <div className="flex justify-between pt-2 border-t">
+            {form.id && <Btn variant="danger" onClick={()=>setConfirmDelete(true)}>Supprimer</Btn>}
+            <div className="flex gap-2 ml-auto">
+              <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+              <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+      {tab==='paiements' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            <KPICard label="Montant total" value={fmt(montantNum)} color="blue"/>
+            <KPICard label="Encaissé" value={fmt(paidTotal)} color="green"/>
+            <KPICard label="Reste" value={fmt(Math.max(0,montantNum-paidTotal))} color="amber"/>
+          </div>
+          <div className="flex items-center gap-3">
+            <StatusBadge status={ps}/>
+            <Btn size="sm" variant="outline" onClick={()=>setShowAddPayment(v=>!v)}>+ Ajouter paiement</Btn>
+          </div>
+          {showAddPayment && (
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-200">
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Date</label><input className={inputCls} type="date" value={payForm.date} onChange={e=>setPayForm(f=>({...f,date:e.target.value}))}/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Montant (€) *</label><input className={inputCls} type="number" value={payForm.montant} onChange={e=>setPayForm(f=>({...f,montant:e.target.value}))} placeholder="0"/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Auteur</label><select className={selectCls} value={payForm.auteur} onChange={e=>setPayForm(f=>({...f,auteur:e.target.value}))}>{PAYMENT_AUTHORS.map(a=><option key={a}>{a}</option>)}</select></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Note</label><input className={inputCls} value={payForm.note} onChange={e=>setPayForm(f=>({...f,note:e.target.value}))} placeholder="Acompte, solde..."/></div>
+              </div>
+              <div className="flex gap-2">
+                <Btn size="sm" variant="primary" onClick={addPayment}>Ajouter</Btn>
+                <Btn size="sm" variant="ghost" onClick={()=>setShowAddPayment(false)}>Annuler</Btn>
+              </div>
+            </div>
+          )}
+          {sortedPayments.length===0 ? <EmptyState message="Aucun paiement enregistré" icon="💳"/> : (
+            <div className="space-y-2">
+              {sortedPayments.map(p => (
+                <div key={p.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                  <div>
+                    <span className="text-sm font-semibold text-green-700">{fmt(p.montant)}</span>
+                    <span className="text-xs text-gray-500 ml-2">{formatDate(p.date)}</span>
+                    {p.note && <span className="text-xs text-gray-500 ml-2">– {p.note}</span>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={p.auteur}/>
+                    <button onClick={()=>deletePayment(p.id)} className="text-gray-300 hover:text-red-500 text-lg leading-none">&times;</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end pt-2 border-t gap-2">
+            <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+          </div>
+        </div>
+      )}
+      {tab==='suivi' && (
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <Btn size="sm" variant="outline" onClick={()=>setShowAddAction(v=>!v)}>+ Ajouter action</Btn>
+          </div>
+          {showAddAction && (
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-200">
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Date</label><input className={inputCls} type="date" value={actForm.date} onChange={e=>setActForm(f=>({...f,date:e.target.value}))}/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Type</label><select className={selectCls} value={actForm.type} onChange={e=>setActForm(f=>({...f,type:e.target.value}))}>{ACTION_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Titre *</label><input className={inputCls} value={actForm.titre} onChange={e=>setActForm(f=>({...f,titre:e.target.value}))} placeholder="Objet de l'action"/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Auteur</label><select className={selectCls} value={actForm.auteur} onChange={e=>setActForm(f=>({...f,auteur:e.target.value}))}>{ASSIGNEES.map(a=><option key={a}>{a}</option>)}</select></div>
+                <div className="col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label><textarea className={textareaCls} rows={2} value={actForm.notes} onChange={e=>setActForm(f=>({...f,notes:e.target.value}))}/></div>
+              </div>
+              <div className="flex gap-2">
+                <Btn size="sm" variant="primary" onClick={addAction}>Ajouter</Btn>
+                <Btn size="sm" variant="ghost" onClick={()=>setShowAddAction(false)}>Annuler</Btn>
+              </div>
+            </div>
+          )}
+          {sortedActions.length===0 ? <EmptyState message="Aucune action enregistrée" icon="📋"/> : (
+            <div className="space-y-2">
+              {sortedActions.map(a => (
+                <div key={a.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <StatusBadge status={a.type}/>
+                      <span className="text-sm font-medium text-gray-800">{a.titre}</span>
+                    </div>
+                    <div className="text-xs text-gray-500">{formatDate(a.date)} · {a.auteur}</div>
+                    {a.notes && <div className="text-xs text-gray-500 mt-0.5">{a.notes}</div>}
+                  </div>
+                  <button onClick={()=>deleteAction(a.id)} className="text-gray-300 hover:text-red-500 text-lg leading-none ml-2">&times;</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end pt-2 border-t gap-2">
+            <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+          </div>
+        </div>
+      )}
+      <ConfirmModal open={confirmDelete} onClose={()=>setConfirmDelete(false)} onConfirm={()=>{onDelete(form.id);onClose();}} title="Supprimer le contrat" message="Cette action est irréversible. Confirmer la suppression ?"/>
+    </Modal>
+  );
+}
+
+function ContractsModule({data, setData, deepLink, clearDeepLink}) {
+  const addToast = useToast();
+  const [statusFilter, setStatusFilter] = React.useState('Tous');
+  const [search, setSearch] = React.useState('');
+  const [selectedContract, setSelectedContract] = React.useState(null);
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [modalTab, setModalTab] = React.useState('infos');
+
+  React.useEffect(() => {
+    if(deepLink) {
+      if(deepLink.id) {
+        const c = data.contracts.find(x => x.id===deepLink.id);
+        if(c) { setSelectedContract(c); setModalTab(deepLink.tab||'infos'); setModalOpen(true); }
+      } else if(deepLink.clientId || deepLink.client) {
+        setSelectedContract({clientId:deepLink.clientId||'', client:deepLink.client||''});
+        setModalTab('infos');
+        setModalOpen(true);
+      }
+      clearDeepLink();
+    }
+  }, [deepLink]);
+
+  const filtered = React.useMemo(() => {
+    return data.contracts.filter(c => {
+      if(statusFilter !== 'Tous' && c.statut !== statusFilter) return false;
+      if(search) {
+        const q = normalize(search);
+        if(!normalize(c.client).includes(q) && !normalize(c.prestation).includes(q)) return false;
+      }
+      return true;
+    });
+  }, [data.contracts, statusFilter, search]);
+
+  const totals = React.useMemo(() => {
+    const nonAnnule = filtered.filter(c => c.statut !== 'Annulé');
+    const signe = nonAnnule.reduce((s,c)=>s+(Number(c.montant)||0),0);
+    const encaisse = nonAnnule.reduce((s,c)=>s+(c.payments||[]).reduce((ps,p)=>ps+(Number(p.montant)||0),0),0);
+    return {signe, encaisse, reste:signe-encaisse};
+  }, [filtered]);
+
+  const openContract = (c) => { setSelectedContract(c); setModalTab('infos'); setModalOpen(true); };
+  const openNew = () => { setSelectedContract(null); setModalTab('infos'); setModalOpen(true); };
+
+  const handleSave = (form) => {
+    const {_newClient, ...cData} = form;
+    let newClients = [...data.clients];
+    if(_newClient && !newClients.find(c=>c.id===_newClient.id)) {
+      newClients = [...newClients, _newClient];
+    }
+    let newContracts;
+    if(cData.id) {
+      newContracts = data.contracts.map(c => c.id===cData.id ? {...cData, montant:Number(cData.montant)||0} : c);
+      addToast('Contrat mis à jour','success');
+    } else {
+      newContracts = [...data.contracts, {...cData, id:genId(), montant:Number(cData.montant)||0}];
+      addToast('Contrat créé','success');
+    }
+    setData(d => ({...d, contracts:newContracts, clients:newClients}));
+  };
+
+  const handleDelete = (id) => {
+    setData(d => ({...d, contracts:d.contracts.filter(c=>c.id!==id)}));
+    addToast('Contrat supprimé','success');
+  };
+
+  const currentContract = modalOpen ? (selectedContract?.id ? data.contracts.find(c=>c.id===selectedContract.id)||selectedContract : selectedContract) : null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">Contrats</h1>
+        <Btn variant="primary" onClick={openNew}>+ Nouveau contrat</Btn>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex gap-1 flex-wrap">
+          {['Tous', ...CONTRACT_STATUSES].map(s => (
+            <button key={s} onClick={()=>setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              {s}
+            </button>
+          ))}
+        </div>
+        <input className={`${inputCls} max-w-xs`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher client, prestation..."/>
+      </div>
+
+      {/* Totals */}
+      <div className="grid grid-cols-3 gap-4">
+        <KPICard label="Total signé" value={fmt(totals.signe)} color="blue"/>
+        <KPICard label="Encaissé" value={fmt(totals.encaisse)} color="green"/>
+        <KPICard label="Reste" value={fmt(totals.reste)} color="amber"/>
+      </div>
+
+      {/* Table / Cards */}
+      {filtered.length === 0 ? <EmptyState message="Aucun contrat trouvé" icon="📄"/> : (<>
+        {/* Desktop Table */}
+        <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>{['Client','Prestation','Montant','Attribué','Statut','Paiement','Échéance',''].map(h=>(
+                <th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3">{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {filtered.map(c => {
+                const ps = calcPaymentStatus(c.montant, c.payments);
+                return (
+                  <tr key={c.id} onClick={()=>openContract(c)} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-800">{c.client}</td>
+                    <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate">{c.prestation}</td>
+                    <td className="px-4 py-3 font-semibold">{fmt(c.montant)}</td>
+                    <td className="px-4 py-3"><StatusBadge status={c.assignedTo}/></td>
+                    <td className="px-4 py-3"><StatusBadge status={c.statut}/></td>
+                    <td className="px-4 py-3"><StatusBadge status={ps}/></td>
+                    <td className="px-4 py-3"><ExpiryBadge dateFin={c.dateFin} statut={c.statut}/></td>
+                    <td className="px-4 py-3"><button className="text-blue-500 hover:text-blue-700 text-xs font-medium">Ouvrir →</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="md:hidden space-y-3">
+          {filtered.map(c => {
+            const ps = calcPaymentStatus(c.montant, c.payments);
+            return (
+              <div key={c.id} onClick={()=>openContract(c)} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 cursor-pointer">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <div className="font-semibold text-gray-800">{c.client}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{c.prestation}</div>
+                  </div>
+                  <div className="text-base font-bold text-blue-700">{fmt(c.montant)}</div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <StatusBadge status={c.assignedTo}/>
+                  <StatusBadge status={c.statut}/>
+                  <StatusBadge status={ps}/>
+                  <ExpiryBadge dateFin={c.dateFin} statut={c.statut}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>)}
+
+      <ContractModal
+        open={modalOpen}
+        onClose={()=>{setModalOpen(false);setSelectedContract(null);}}
+        contract={currentContract?.id ? currentContract : null}
+        clients={data.clients}
+        onSave={handleSave}
+        onDelete={handleDelete}
+        defaultTab={modalTab}
+      />
+    </div>
+  );
+}
+
+// ============================================================
+// CRM MODULE
+// ============================================================
+function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavigate}) {
+  const [tab, setTab] = React.useState('infos');
+  const [editing, setEditing] = React.useState(false);
+  const [form, setForm] = React.useState({});
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const addToast = useToast();
+
+  React.useEffect(() => {
+    if(open && client) {
+      setForm({...client});
+      setEditing(false);
+      setTab('infos');
+    }
+  }, [open, client]);
+
+  const linkedContracts = React.useMemo(() => {
+    if(!client) return [];
+    return contracts.filter(c => c.clientId===client.id || normalize(c.client)===normalize(client.entreprise));
+  }, [client, contracts]);
+
+  const timeline = React.useMemo(() => {
+    const events = [];
+    if(client?.dateEntree) events.push({date:client.dateEntree, label:'Entrée CRM', type:'crm'});
+    linkedContracts.forEach(c => {
+      if(c.dateDebut) events.push({date:c.dateDebut, label:`Contrat: ${c.prestation}`, type:'contract', id:c.id});
+    });
+    return events.sort((a,b) => new Date(b.date)-new Date(a.date));
+  }, [client, linkedContracts]);
+
+  const caGenere = linkedContracts.filter(c=>c.statut!=='Annulé').reduce((s,c)=>s+(Number(c.montant)||0),0);
+
+  const handleSave = () => {
+    onSave({...form, potentiel:Number(form.potentiel)||0});
+    setEditing(false);
+    addToast('Client mis à jour','success');
+  };
+
+  const tabs = [{id:'infos',label:'Infos'},{id:'contrats',label:`Contrats (${linkedContracts.length})`},{id:'chrono',label:'Chronologie'}];
+
+  return (
+    <Modal open={open} onClose={onClose} title={client?.entreprise||'Client'} size="md">
+      <Tabs tabs={tabs} active={tab} onChange={setTab}/>
+      {tab==='infos' && (
+        <div className="space-y-4">
+          {!editing ? (
+            <>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div><span className="text-gray-500">Entreprise:</span> <span className="font-medium">{form.entreprise}</span></div>
+                <div><span className="text-gray-500">Contact:</span> <span className="font-medium">{form.nom}</span></div>
+                <div><span className="text-gray-500">Email:</span> <span className="font-medium">{form.email||'—'}</span></div>
+                <div><span className="text-gray-500">Tél:</span> <span className="font-medium">{form.telephone||'—'}</span></div>
+                <div><span className="text-gray-500">Source:</span> <StatusBadge status={form.source}/></div>
+                <div><span className="text-gray-500">Étape:</span> <StatusBadge status={form.etape}/></div>
+                <div><span className="text-gray-500">Potentiel:</span> <span className="font-semibold text-blue-700">{fmt(form.potentiel)}</span></div>
+                <div><span className="text-gray-500">CA généré:</span> <span className="font-semibold text-green-700">{fmt(caGenere)}</span></div>
+              </div>
+              {form.notes && <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">{form.notes}</div>}
+              <div className="flex justify-between pt-2">
+                <Btn variant="danger" size="sm" onClick={()=>setConfirmDelete(true)}>Supprimer</Btn>
+                <Btn variant="outline" size="sm" onClick={()=>setEditing(true)}>Modifier</Btn>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Entreprise</label><input className={inputCls} value={form.entreprise||''} onChange={e=>setForm(f=>({...f,entreprise:e.target.value}))}/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom contact</label><input className={inputCls} value={form.nom||''} onChange={e=>setForm(f=>({...f,nom:e.target.value}))}/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Email</label><input className={inputCls} type="email" value={form.email||''} onChange={e=>setForm(f=>({...f,email:e.target.value}))}/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Téléphone</label><input className={inputCls} value={form.telephone||''} onChange={e=>setForm(f=>({...f,telephone:e.target.value}))}/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Source</label><select className={selectCls} value={form.source||'Autre'} onChange={e=>setForm(f=>({...f,source:e.target.value}))}>{SOURCES.map(s=><option key={s}>{s}</option>)}</select></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Étape</label><select className={selectCls} value={form.etape||'Contact'} onChange={e=>setForm(f=>({...f,etape:e.target.value}))}>{CRM_STAGES.map(s=><option key={s}>{s}</option>)}</select></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Potentiel (€)</label><input className={inputCls} type="number" value={form.potentiel||''} onChange={e=>setForm(f=>({...f,potentiel:e.target.value}))}/></div>
+              </div>
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label><textarea className={textareaCls} rows={3} value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
+              <div className="flex gap-2 justify-end">
+                <Btn variant="secondary" size="sm" onClick={()=>setEditing(false)}>Annuler</Btn>
+                <Btn variant="primary" size="sm" onClick={handleSave}>Enregistrer</Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {tab==='contrats' && (
+        <div className="space-y-3">
+          {linkedContracts.length===0 ? <EmptyState message="Aucun contrat lié" icon="📄"/> : (
+            linkedContracts.map(c => {
+              const ps = calcPaymentStatus(c.montant, c.payments);
+              return (
+                <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                  <div>
+                    <div className="text-sm font-medium text-gray-800">{c.prestation}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{fmt(c.montant)}</div>
+                  </div>
+                  <div className="flex gap-1.5"><StatusBadge status={c.statut}/><StatusBadge status={ps}/></div>
+                </div>
+              );
+            })
+          )}
+          <Btn size="sm" variant="outline" onClick={()=>{onClose();onNavigate('contracts',{clientId:client.id,client:client.entreprise});}}>
+            + Créer un contrat
+          </Btn>
+        </div>
+      )}
+      {tab==='chrono' && (
+        <div className="space-y-2">
+          {timeline.length===0 ? <EmptyState message="Aucun événement" icon="📅"/> : (
+            timeline.map((ev, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${ev.type==='crm'?'bg-blue-400':'bg-green-400'}`}/>
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-gray-800">{ev.label}</div>
+                  <div className="text-xs text-gray-500">{formatDate(ev.date)}</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+      <ConfirmModal open={confirmDelete} onClose={()=>setConfirmDelete(false)} onConfirm={()=>{onDelete(client.id);onClose();}} title="Supprimer le client" message="Cette action est irréversible."/>
+    </Modal>
+  );
+}
+
+function CRMModule({data, setData, onNavigate}) {
+  const addToast = useToast();
+  const [view, setView] = React.useState('liste');
+  const [search, setSearch] = React.useState('');
+  const [selectedClient, setSelectedClient] = React.useState(null);
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [newClientModal, setNewClientModal] = React.useState(false);
+  const [newForm, setNewForm] = React.useState({entreprise:'',nom:'',email:'',telephone:'',source:'Autre',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr()});
+
+  const filtered = React.useMemo(() => {
+    if(!search) return data.clients;
+    const q = normalize(search);
+    return data.clients.filter(c => normalize(c.entreprise).includes(q)||normalize(c.nom).includes(q));
+  }, [data.clients, search]);
+
+  const getCA = (cl) => {
+    return data.contracts.filter(c=>(c.clientId===cl.id||normalize(c.client)===normalize(cl.entreprise))&&c.statut!=='Annulé').reduce((s,c)=>s+(Number(c.montant)||0),0);
+  };
+
+  const openClient = (cl) => { setSelectedClient(cl); setModalOpen(true); };
+
+  const handleSave = (updated) => {
+    setData(d => ({...d, clients:d.clients.map(c=>c.id===updated.id?updated:c)}));
+  };
+
+  const handleDelete = (id) => {
+    setData(d => ({...d, clients:d.clients.filter(c=>c.id!==id)}));
+    addToast('Client supprimé','success');
+  };
+
+  const handleCreate = () => {
+    if(!newForm.entreprise.trim()||!newForm.nom.trim()) { addToast('Entreprise et nom requis','error'); return; }
+    const nc = {...newForm, id:genId(), potentiel:Number(newForm.potentiel)||0, dateEntree:newForm.dateEntree||todayStr()};
+    setData(d => ({...d, clients:[...d.clients, nc]}));
+    setNewClientModal(false);
+    setNewForm({entreprise:'',nom:'',email:'',telephone:'',source:'Autre',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr()});
+    addToast('Client créé','success');
+  };
+
+  const pipelineStages = CRM_STAGES.filter(s=>s!=='Client');
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">CRM</h1>
+        <div className="flex gap-2">
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button onClick={()=>setView('liste')} className={`px-3 py-1 text-xs font-medium rounded ${view==='liste'?'bg-white shadow text-gray-800':'text-gray-500'}`}>Liste</button>
+            <button onClick={()=>setView('pipeline')} className={`px-3 py-1 text-xs font-medium rounded ${view==='pipeline'?'bg-white shadow text-gray-800':'text-gray-500'}`}>Pipeline</button>
+          </div>
+          <Btn variant="primary" onClick={()=>setNewClientModal(true)}>+ Nouveau client</Btn>
+        </div>
+      </div>
+
+      {view==='liste' && (<>
+        <input className={`${inputCls} max-w-sm`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher entreprise, nom..."/>
+        {filtered.length===0 ? <EmptyState message="Aucun client trouvé" icon="👥"/> : (<>
+          {/* Desktop */}
+          <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>{['Entreprise','Nom','Source','Étape','Potentiel','CA généré','Entrée',''].map(h=>(
+                  <th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3">{h}</th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {filtered.map(cl => (
+                  <tr key={cl.id} onClick={()=>openClient(cl)} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-800">{cl.entreprise}</td>
+                    <td className="px-4 py-3 text-gray-600">{cl.nom}</td>
+                    <td className="px-4 py-3"><StatusBadge status={cl.source}/></td>
+                    <td className="px-4 py-3"><StatusBadge status={cl.etape}/></td>
+                    <td className="px-4 py-3 font-semibold">{fmt(cl.potentiel)}</td>
+                    <td className="px-4 py-3 text-green-700 font-semibold">{fmt(getCA(cl))}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(cl.dateEntree)}</td>
+                    <td className="px-4 py-3"><button className="text-blue-500 hover:text-blue-700 text-xs">Voir →</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Mobile */}
+          <div className="md:hidden space-y-3">
+            {filtered.map(cl => (
+              <div key={cl.id} onClick={()=>openClient(cl)} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 cursor-pointer">
+                <div className="flex justify-between mb-2">
+                  <div>
+                    <div className="font-semibold text-gray-800">{cl.entreprise}</div>
+                    <div className="text-xs text-gray-500">{cl.nom}</div>
+                  </div>
+                  <div className="text-sm font-bold text-blue-700">{fmt(cl.potentiel)}</div>
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  <StatusBadge status={cl.source}/><StatusBadge status={cl.etape}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>)}
+      </>)}
+
+      {view==='pipeline' && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {pipelineStages.map(stage => {
+            const stageClients = data.clients.filter(c=>c.etape===stage);
+            return (
+              <div key={stage} className="bg-gray-50 rounded-2xl p-3">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-semibold text-gray-600">{stage}</span>
+                  <span className="text-xs bg-white px-1.5 py-0.5 rounded-full text-gray-500 shadow-sm">{stageClients.length}</span>
+                </div>
+                <div className="space-y-2">
+                  {stageClients.map(cl => (
+                    <div key={cl.id} onClick={()=>openClient(cl)} className="bg-white rounded-xl p-3 shadow-sm cursor-pointer hover:shadow-md transition-shadow border border-gray-100">
+                      <div className="text-sm font-semibold text-gray-800 truncate">{cl.entreprise}</div>
+                      <div className="text-xs text-gray-500 truncate mt-0.5">{cl.nom}</div>
+                      <div className="text-xs font-semibold text-blue-700 mt-1">{fmt(cl.potentiel)}</div>
+                    </div>
+                  ))}
+                  {stageClients.length===0 && <div className="text-center text-xs text-gray-300 py-4">Vide</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <ClientModal
+        open={modalOpen}
+        onClose={()=>{setModalOpen(false);setSelectedClient(null);}}
+        client={selectedClient}
+        contracts={data.contracts}
+        onSave={handleSave}
+        onDelete={handleDelete}
+        onNavigate={onNavigate}
+      />
+
+      {/* New Client Modal */}
+      <Modal open={newClientModal} onClose={()=>setNewClientModal(false)} title="Nouveau client" size="md">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Entreprise *</label><input className={inputCls} value={newForm.entreprise} onChange={e=>setNewForm(f=>({...f,entreprise:e.target.value}))}/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom contact *</label><input className={inputCls} value={newForm.nom} onChange={e=>setNewForm(f=>({...f,nom:e.target.value}))}/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Email</label><input className={inputCls} type="email" value={newForm.email} onChange={e=>setNewForm(f=>({...f,email:e.target.value}))}/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Téléphone</label><input className={inputCls} value={newForm.telephone} onChange={e=>setNewForm(f=>({...f,telephone:e.target.value}))}/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Source</label><select className={selectCls} value={newForm.source} onChange={e=>setNewForm(f=>({...f,source:e.target.value}))}>{SOURCES.map(s=><option key={s}>{s}</option>)}</select></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Étape</label><select className={selectCls} value={newForm.etape} onChange={e=>setNewForm(f=>({...f,etape:e.target.value}))}>{CRM_STAGES.map(s=><option key={s}>{s}</option>)}</select></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Potentiel (€)</label><input className={inputCls} type="number" value={newForm.potentiel} onChange={e=>setNewForm(f=>({...f,potentiel:e.target.value}))}/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Date entrée</label><input className={inputCls} type="date" value={newForm.dateEntree} onChange={e=>setNewForm(f=>({...f,dateEntree:e.target.value}))}/></div>
+          </div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label><textarea className={textareaCls} rows={3} value={newForm.notes} onChange={e=>setNewForm(f=>({...f,notes:e.target.value}))}/></div>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" onClick={()=>setNewClientModal(false)}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleCreate}>Créer</Btn>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ============================================================
+// TASKS MODULE (KANBAN)
+// ============================================================
+function TaskModal({open, onClose, task, onSave, onDelete}) {
+  const [form, setForm] = React.useState({});
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const addToast = useToast();
+
+  React.useEffect(() => {
+    if(open) {
+      if(task) setForm({...task});
+      else setForm({id:null,titre:'',client:'',assignedTo:'Micka',statut:'À faire',priorite:'Moyenne',echeance:'',notes:''});
+    }
+  }, [open, task]);
+
+  const handleSave = () => {
+    if(!form.titre.trim()) { addToast('Titre requis','error'); return; }
+    onSave(form);
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={form.id?'Modifier la tâche':'Nouvelle tâche'} size="sm">
+      <div className="space-y-3">
+        <div><label className="block text-xs font-medium text-gray-600 mb-1">Titre *</label><input className={inputCls} value={form.titre||''} onChange={e=>setForm(f=>({...f,titre:e.target.value}))} placeholder="Description de la tâche"/></div>
+        <div><label className="block text-xs font-medium text-gray-600 mb-1">Client</label><input className={inputCls} value={form.client||''} onChange={e=>setForm(f=>({...f,client:e.target.value}))} placeholder="Nom du client"/></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Assigné à</label><select className={selectCls} value={form.assignedTo||'Micka'} onChange={e=>setForm(f=>({...f,assignedTo:e.target.value}))}>{ASSIGNEES.map(a=><option key={a}>{a}</option>)}</select></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Statut</label><select className={selectCls} value={form.statut||'À faire'} onChange={e=>setForm(f=>({...f,statut:e.target.value}))}>{TASK_STATUSES.map(s=><option key={s}>{s}</option>)}</select></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Priorité</label><select className={selectCls} value={form.priorite||'Moyenne'} onChange={e=>setForm(f=>({...f,priorite:e.target.value}))}>{TASK_PRIORITIES.map(p=><option key={p}>{p}</option>)}</select></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Échéance</label><input className={inputCls} type="date" value={form.echeance||''} onChange={e=>setForm(f=>({...f,echeance:e.target.value}))}/></div>
+        </div>
+        <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label><textarea className={textareaCls} rows={3} value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
+        <div className="flex justify-between pt-2">
+          {form.id && <Btn variant="danger" size="sm" onClick={()=>setConfirmDelete(true)}>Supprimer</Btn>}
+          <div className="flex gap-2 ml-auto">
+            <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+          </div>
+        </div>
+      </div>
+      <ConfirmModal open={confirmDelete} onClose={()=>setConfirmDelete(false)} onConfirm={()=>{onDelete(form.id);onClose();}} title="Supprimer la tâche" message="Confirmer la suppression ?"/>
+    </Modal>
+  );
+}
+
+function TaskCard({task, onMove, onEdit, onDelete}) {
+  const isOverdue = task.echeance && task.statut !== 'Terminé' && new Date(task.echeance+'T23:59:59') < new Date();
+  const statusOrder = ['À faire','En cours','Terminé'];
+  const idx = statusOrder.indexOf(task.statut);
+  const canLeft = idx > 0;
+  const canRight = idx < statusOrder.length-1;
+
+  return (
+    <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 space-y-2">
+      <div className="text-sm font-medium text-gray-800 leading-snug">{task.titre}</div>
+      {task.client && <div className="text-xs text-gray-400">{task.client}</div>}
+      <div className="flex flex-wrap gap-1">
+        <StatusBadge status={task.assignedTo}/>
+        <StatusBadge status={task.priorite}/>
+      </div>
+      {task.echeance && (
+        <div className={`text-xs font-medium ${isOverdue?'text-red-600':'text-gray-500'}`}>
+          {isOverdue?'⚠ ':''}{formatDate(task.echeance)}
+        </div>
+      )}
+      <div className="flex items-center justify-between pt-1 border-t border-gray-50">
+        <div className="flex gap-1">
+          {canLeft && <button onClick={()=>onMove(task,'left')} className="text-gray-300 hover:text-gray-600 text-sm px-1">←</button>}
+          {canRight && <button onClick={()=>onMove(task,'right')} className="text-gray-300 hover:text-gray-600 text-sm px-1">→</button>}
+        </div>
+        <div className="flex gap-1">
+          <button onClick={()=>onEdit(task)} className="text-gray-300 hover:text-blue-500 text-xs px-1">✏</button>
+          <button onClick={()=>onDelete(task.id)} className="text-gray-300 hover:text-red-500 text-sm px-1">&times;</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TasksModule({data, setData}) {
+  const addToast = useToast();
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [selectedTask, setSelectedTask] = React.useState(null);
+  const [confirmDelete, setConfirmDelete] = React.useState(null);
+
+  const statusOrder = ['À faire','En cours','Terminé'];
+
+  const moveTask = (task, dir) => {
+    const idx = statusOrder.indexOf(task.statut);
+    const newIdx = dir==='right' ? idx+1 : idx-1;
+    if(newIdx<0||newIdx>=statusOrder.length) return;
+    setData(d => ({...d, tasks:d.tasks.map(t=>t.id===task.id?{...t,statut:statusOrder[newIdx]}:t)}));
+  };
+
+  const handleSave = (form) => {
+    if(form.id) {
+      setData(d => ({...d, tasks:d.tasks.map(t=>t.id===form.id?form:t)}));
+      addToast('Tâche mise à jour','success');
+    } else {
+      setData(d => ({...d, tasks:[...d.tasks, {...form, id:genId()}]}));
+      addToast('Tâche créée','success');
+    }
+  };
+
+  const handleDelete = (id) => {
+    setData(d => ({...d, tasks:d.tasks.filter(t=>t.id!==id)}));
+    addToast('Tâche supprimée','success');
+  };
+
+  const colColors = {'À faire':'bg-slate-50 border-slate-200','En cours':'bg-blue-50 border-blue-200','Terminé':'bg-green-50 border-green-200'};
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">Tâches</h1>
+        <Btn variant="primary" onClick={()=>{setSelectedTask(null);setModalOpen(true);}}>+ Nouvelle tâche</Btn>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {statusOrder.map(status => {
+          const tasks = data.tasks.filter(t=>t.statut===status);
+          return (
+            <div key={status} className={`border rounded-2xl p-3 ${colColors[status]}`}>
+              <div className="flex items-center justify-between mb-3 px-1">
+                <span className="text-sm font-semibold text-gray-700">{status}</span>
+                <span className="text-xs bg-white px-1.5 py-0.5 rounded-full shadow-sm text-gray-500">{tasks.length}</span>
+              </div>
+              <div className="space-y-2">
+                {tasks.length===0 && <div className="text-center text-xs text-gray-300 py-6">Vide</div>}
+                {tasks.map(t => (
+                  <TaskCard key={t.id} task={t}
+                    onMove={moveTask}
+                    onEdit={(t)=>{setSelectedTask(t);setModalOpen(true);}}
+                    onDelete={(id)=>setConfirmDelete(id)}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <TaskModal
+        open={modalOpen}
+        onClose={()=>{setModalOpen(false);setSelectedTask(null);}}
+        task={selectedTask}
+        onSave={handleSave}
+        onDelete={handleDelete}
+      />
+      <ConfirmModal open={!!confirmDelete} onClose={()=>setConfirmDelete(null)} onConfirm={()=>{handleDelete(confirmDelete);setConfirmDelete(null);}} title="Supprimer la tâche" message="Confirmer la suppression ?"/>
+    </div>
+  );
+}
+
+// ============================================================
+// BANK & EXPENSES MODULE
+// ============================================================
+function ExpenseModal({open, onClose, expense, onSave, onDelete}) {
+  const [form, setForm] = React.useState({});
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const addToast = useToast();
+
+  React.useEffect(() => {
+    if(open) {
+      if(expense) setForm({...expense});
+      else setForm({id:null,titre:'',montant:'',categorie:'Autre',payePar:'Micka',date:todayStr(),refacturable:false,notes:''});
+    }
+  }, [open, expense]);
+
+  const handleSave = () => {
+    if(!form.titre.trim()||!form.montant) { addToast('Titre et montant requis','error'); return; }
+    onSave({...form, montant:Number(form.montant)});
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={form.id?'Modifier la dépense':'Nouvelle dépense'} size="sm">
+      <div className="space-y-3">
+        <div><label className="block text-xs font-medium text-gray-600 mb-1">Titre *</label><input className={inputCls} value={form.titre||''} onChange={e=>setForm(f=>({...f,titre:e.target.value}))} placeholder="Description"/></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Montant (€) *</label><input className={inputCls} type="number" value={form.montant||''} onChange={e=>setForm(f=>({...f,montant:e.target.value}))} placeholder="0"/></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label><select className={selectCls} value={form.categorie||'Autre'} onChange={e=>setForm(f=>({...f,categorie:e.target.value}))}>{EXPENSE_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Payé par</label><select className={selectCls} value={form.payePar||'Micka'} onChange={e=>setForm(f=>({...f,payePar:e.target.value}))}>{ASSIGNEES.map(a=><option key={a}>{a}</option>)}</select></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Date</label><input className={inputCls} type="date" value={form.date||todayStr()} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
+        </div>
+        <div className="flex items-center gap-2">
+          <input type="checkbox" id="refact" checked={!!form.refacturable} onChange={e=>setForm(f=>({...f,refacturable:e.target.checked}))} className="rounded"/>
+          <label htmlFor="refact" className="text-xs text-gray-600">Refacturable au client</label>
+        </div>
+        <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label><textarea className={textareaCls} rows={2} value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
+        <div className="flex justify-between pt-2">
+          {form.id && <Btn variant="danger" size="sm" onClick={()=>setConfirmDelete(true)}>Supprimer</Btn>}
+          <div className="flex gap-2 ml-auto">
+            <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+          </div>
+        </div>
+      </div>
+      <ConfirmModal open={confirmDelete} onClose={()=>setConfirmDelete(false)} onConfirm={()=>{onDelete(form.id);onClose();}} title="Supprimer la dépense" message="Confirmer la suppression ?"/>
+    </Modal>
+  );
+}
+
+function TxModal({open, onClose, tx, onSave, onDelete}) {
+  const [form, setForm] = React.useState({});
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const addToast = useToast();
+
+  React.useEffect(() => {
+    if(open) {
+      if(tx) setForm({...tx, montant:Math.abs(Number(tx.montant||0))});
+      else setForm({id:null,label:'',montant:'',type:'Achat',date:todayStr(),auteur:'Micka',statut:'Validé'});
+    }
+  }, [open, tx]);
+
+  const handleSave = () => {
+    if(!form.label.trim()||!form.montant) { addToast('Label et montant requis','error'); return; }
+    const signedMontant = (['Achat','Sortie'].includes(form.type)) ? -Math.abs(Number(form.montant)) : Math.abs(Number(form.montant));
+    onSave({...form, montant:signedMontant});
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={form.id?'Modifier la transaction':'Nouvelle transaction'} size="sm">
+      <div className="space-y-3">
+        <div><label className="block text-xs font-medium text-gray-600 mb-1">Label *</label><input className={inputCls} value={form.label||''} onChange={e=>setForm(f=>({...f,label:e.target.value}))} placeholder="Description"/></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Montant (€) *</label><input className={inputCls} type="number" value={form.montant||''} onChange={e=>setForm(f=>({...f,montant:e.target.value}))} placeholder="0" min="0"/></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Type</label><select className={selectCls} value={form.type||'Achat'} onChange={e=>setForm(f=>({...f,type:e.target.value}))}>{TX_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Date</label><input className={inputCls} type="date" value={form.date||todayStr()} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Auteur</label><select className={selectCls} value={form.auteur||'Micka'} onChange={e=>setForm(f=>({...f,auteur:e.target.value}))}>{[...ASSIGNEES,'Système'].map(a=><option key={a}>{a}</option>)}</select></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Statut</label><select className={selectCls} value={form.statut||'Validé'} onChange={e=>setForm(f=>({...f,statut:e.target.value}))}>{['Validé','Annulé'].map(s=><option key={s}>{s}</option>)}</select></div>
+        </div>
+        <div className="flex justify-between pt-2">
+          {form.id && <Btn variant="danger" size="sm" onClick={()=>setConfirmDelete(true)}>Supprimer</Btn>}
+          <div className="flex gap-2 ml-auto">
+            <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+          </div>
+        </div>
+      </div>
+      <ConfirmModal open={confirmDelete} onClose={()=>setConfirmDelete(false)} onConfirm={()=>{onDelete(form.id);onClose();}} title="Supprimer la transaction" message="Confirmer la suppression ?"/>
+    </Modal>
+  );
+}
+
+function SubModal({open, onClose, sub, onSave, onDelete}) {
+  const [form, setForm] = React.useState({});
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const addToast = useToast();
+
+  React.useEffect(() => {
+    if(open) {
+      if(sub) setForm({...sub});
+      else setForm({id:null,name:'',amount:'',day:1,category:'Logiciels',active:true});
+    }
+  }, [open, sub]);
+
+  const handleSave = () => {
+    if(!form.name.trim()||!form.amount) { addToast('Nom et montant requis','error'); return; }
+    onSave({...form, amount:Number(form.amount), day:Number(form.day)||1});
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={form.id?'Modifier l\'abonnement':'Nouvel abonnement'} size="sm">
+      <div className="space-y-3">
+        <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom *</label><input className={inputCls} value={form.name||''} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Nom du service"/></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Montant (€/mois) *</label><input className={inputCls} type="number" value={form.amount||''} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} placeholder="0"/></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Jour du mois (1-31)</label><input className={inputCls} type="number" value={form.day||1} min={1} max={31} onChange={e=>setForm(f=>({...f,day:e.target.value}))}/></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label><select className={selectCls} value={form.category||'Logiciels'} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>{EXPENSE_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
+        </div>
+        <div className="flex items-center gap-2">
+          <input type="checkbox" id="subactive" checked={!!form.active} onChange={e=>setForm(f=>({...f,active:e.target.checked}))} className="rounded"/>
+          <label htmlFor="subactive" className="text-xs text-gray-600">Actif</label>
+        </div>
+        <div className="flex justify-between pt-2">
+          {form.id && <Btn variant="danger" size="sm" onClick={()=>setConfirmDelete(true)}>Supprimer</Btn>}
+          <div className="flex gap-2 ml-auto">
+            <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+          </div>
+        </div>
+      </div>
+      <ConfirmModal open={confirmDelete} onClose={()=>setConfirmDelete(false)} onConfirm={()=>{onDelete(form.id);onClose();}} title="Supprimer l'abonnement" message="Confirmer ?"/>
+    </Modal>
+  );
+}
+
+function BankModule({data, setData, deepLink, clearDeepLink}) {
+  const addToast = useToast();
+  const [editBalance, setEditBalance] = React.useState(false);
+  const [tempBalance, setTempBalance] = React.useState('');
+  const [expenseModal, setExpenseModal] = React.useState(false);
+  const [txModal, setTxModal] = React.useState(false);
+  const [subModal, setSubModal] = React.useState(false);
+  const [selectedExpense, setSelectedExpense] = React.useState(null);
+  const [selectedTx, setSelectedTx] = React.useState(null);
+  const [selectedSub, setSelectedSub] = React.useState(null);
+
+  React.useEffect(() => {
+    if(deepLink) {
+      if(deepLink.type==='bankTx') {
+        const tx = deepLink.id ? data.bank.transactions.find(t=>t.id===deepLink.id) : null;
+        setSelectedTx(tx||null);
+        setTxModal(true);
+      } else if(deepLink.type==='expense') {
+        const exp = deepLink.id ? data.expenses.find(e=>e.id===deepLink.id) : null;
+        setSelectedExpense(exp||null);
+        setExpenseModal(true);
+      }
+      clearDeepLink();
+    }
+  }, [deepLink]);
+
+  const solde = React.useMemo(() => {
+    const validTx = (data.bank.transactions||[]).filter(t=>t.statut!=='Annulé');
+    return (data.bank.initialBalance||0) + validTx.reduce((s,t)=>s+(Number(t.montant)||0),0);
+  }, [data.bank]);
+
+  const saveBalance = () => {
+    setData(d => ({...d, bank:{...d.bank, initialBalance:Number(tempBalance)||0}}));
+    setEditBalance(false);
+    addToast('Solde initial mis à jour','success');
+  };
+
+  const saveExpense = (form) => {
+    if(form.id) {
+      setData(d => ({...d, expenses:d.expenses.map(e=>e.id===form.id?form:e)}));
+      addToast('Dépense mise à jour','success');
+    } else {
+      setData(d => ({...d, expenses:[...d.expenses, {...form,id:genId()}]}));
+      addToast('Dépense ajoutée','success');
+    }
+  };
+
+  const deleteExpense = (id) => {
+    setData(d => ({...d, expenses:d.expenses.filter(e=>e.id!==id)}));
+    addToast('Dépense supprimée','success');
+  };
+
+  const saveTx = (form) => {
+    if(form.id) {
+      setData(d => ({...d, bank:{...d.bank, transactions:d.bank.transactions.map(t=>t.id===form.id?form:t)}}));
+      addToast('Transaction mise à jour','success');
+    } else {
+      setData(d => ({...d, bank:{...d.bank, transactions:[...d.bank.transactions, {...form,id:genId()}]}}));
+      addToast('Transaction ajoutée','success');
+    }
+  };
+
+  const deleteTx = (id) => {
+    setData(d => ({...d, bank:{...d.bank, transactions:d.bank.transactions.filter(t=>t.id!==id)}}));
+    addToast('Transaction supprimée','success');
+  };
+
+  const saveSub = (form) => {
+    if(form.id) {
+      setData(d => ({...d, bank:{...d.bank, subscriptions:d.bank.subscriptions.map(s=>s.id===form.id?form:s)}}));
+    } else {
+      setData(d => ({...d, bank:{...d.bank, subscriptions:[...d.bank.subscriptions, {...form,id:genId()}]}}));
+    }
+    addToast('Abonnement enregistré','success');
+  };
+
+  const deleteSub = (id) => {
+    setData(d => ({...d, bank:{...d.bank, subscriptions:d.bank.subscriptions.filter(s=>s.id!==id)}}));
+  };
+
+  const toggleSubActive = (id) => {
+    setData(d => ({...d, bank:{...d.bank, subscriptions:d.bank.subscriptions.map(s=>s.id===id?{...s,active:!s.active}:s)}}));
+  };
+
+  const generateSubscriptionTx = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const monthKey = currentMonthKey();
+    const activeSubs = (data.bank.subscriptions||[]).filter(s=>s.active);
+    const existingTx = data.bank.transactions||[];
+    let added = 0;
+
+    const newTxs = [];
+    activeSubs.forEach(sub => {
+      const alreadyExists = existingTx.some(t => {
+        if(t.statut==='Annulé') return false;
+        if(normalize(t.label)!==normalize(sub.name)) return false;
+        const txDate = t.date ? t.date.substring(0,7) : '';
+        return txDate === monthKey;
+      });
+      if(!alreadyExists) {
+        const lastDay = new Date(year, month+1, 0).getDate();
+        const day = Math.min(Number(sub.day)||1, lastDay);
+        const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        newTxs.push({id:genId(), label:sub.name, montant:-Math.abs(sub.amount), type:'Achat', date:dateStr, auteur:'Système', statut:'Validé'});
+        added++;
+      }
+    });
+
+    if(added > 0) {
+      setData(d => ({...d, bank:{...d.bank, transactions:[...d.bank.transactions, ...newTxs]}}));
+      addToast(`${added} transaction(s) générée(s)`, 'success');
+    } else {
+      addToast('Toutes les transactions du mois existent déjà', 'info');
+    }
+  };
+
+  const sortedTx = [...(data.bank.transactions||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const sortedExpenses = [...(data.expenses||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-gray-800">Banque & Frais</h1>
+
+      {/* Solde */}
+      <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-2xl p-5">
+        <div className="text-xs font-medium text-indigo-600 mb-1">Solde carte</div>
+        <div className="text-3xl font-bold text-indigo-800 mb-2">{fmt(solde)}</div>
+        <div className="flex items-center gap-3">
+          {!editBalance ? (
+            <><span className="text-xs text-indigo-500">Solde initial: {fmt(data.bank.initialBalance)}</span>
+            <button onClick={()=>{setTempBalance(data.bank.initialBalance);setEditBalance(true);}} className="text-xs text-indigo-400 hover:text-indigo-600 underline">Modifier</button></>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input className="border border-indigo-300 rounded px-2 py-1 text-sm w-32 bg-white" type="number" value={tempBalance} onChange={e=>setTempBalance(e.target.value)}/>
+              <Btn size="sm" variant="primary" onClick={saveBalance}>OK</Btn>
+              <Btn size="sm" variant="ghost" onClick={()=>setEditBalance(false)}>Annuler</Btn>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Avances perso */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <SectionHeader title="Avances perso (Dépenses)" action={<Btn size="sm" variant="primary" onClick={()=>{setSelectedExpense(null);setExpenseModal(true);}}>+ Ajouter</Btn>}/>
+        {sortedExpenses.length===0 ? <EmptyState message="Aucune dépense" icon="💸"/> : (<>
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>{['Titre','Montant','Catégorie','Payé par','Date','Refact.',''].map(h=><th key={h} className="text-left text-xs font-semibold text-gray-500 px-3 py-2">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {sortedExpenses.map(e=>(
+                  <tr key={e.id} className="border-t border-gray-50 hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium">{e.titre}</td>
+                    <td className="px-3 py-2 text-red-600 font-semibold">{fmt(e.montant)}</td>
+                    <td className="px-3 py-2 text-gray-500">{e.categorie}</td>
+                    <td className="px-3 py-2"><StatusBadge status={e.payePar}/></td>
+                    <td className="px-3 py-2 text-gray-500 text-xs">{formatDate(e.date)}</td>
+                    <td className="px-3 py-2 text-xs">{e.refacturable?'✓':''}</td>
+                    <td className="px-3 py-2"><button onClick={()=>{setSelectedExpense(e);setExpenseModal(true);}} className="text-blue-400 hover:text-blue-600 text-xs">Éditer</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="md:hidden space-y-2 mt-2">
+            {sortedExpenses.map(e=>(
+              <div key={e.id} onClick={()=>{setSelectedExpense(e);setExpenseModal(true);}} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100 cursor-pointer">
+                <div>
+                  <div className="text-sm font-medium">{e.titre}</div>
+                  <div className="text-xs text-gray-500">{e.categorie} · {formatDate(e.date)}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={e.payePar}/>
+                  <span className="text-sm font-bold text-red-600">{fmt(e.montant)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>)}
+      </div>
+
+      {/* Relevé carte */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <SectionHeader title="Relevé carte (Transactions)" action={<Btn size="sm" variant="primary" onClick={()=>{setSelectedTx(null);setTxModal(true);}}>+ Ajouter</Btn>}/>
+        {sortedTx.length===0 ? <EmptyState message="Aucune transaction" icon="🏦"/> : (<>
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>{['Label','Montant','Type','Date','Auteur','Statut',''].map(h=><th key={h} className="text-left text-xs font-semibold text-gray-500 px-3 py-2">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {sortedTx.map(t=>(
+                  <tr key={t.id} className="border-t border-gray-50 hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium">{t.label}</td>
+                    <td className={`px-3 py-2 font-semibold ${Number(t.montant)>=0?'text-green-600':'text-red-600'}`}>{fmt(Math.abs(t.montant))}</td>
+                    <td className="px-3 py-2 text-gray-500">{t.type}</td>
+                    <td className="px-3 py-2 text-gray-500 text-xs">{formatDate(t.date)}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{t.auteur}</td>
+                    <td className="px-3 py-2"><StatusBadge status={t.statut}/></td>
+                    <td className="px-3 py-2"><button onClick={()=>{setSelectedTx(t);setTxModal(true);}} className="text-blue-400 hover:text-blue-600 text-xs">Éditer</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="md:hidden space-y-2 mt-2">
+            {sortedTx.map(t=>(
+              <div key={t.id} onClick={()=>{setSelectedTx(t);setTxModal(true);}} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100 cursor-pointer">
+                <div>
+                  <div className="text-sm font-medium">{t.label}</div>
+                  <div className="text-xs text-gray-500">{t.type} · {formatDate(t.date)}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={t.statut}/>
+                  <span className={`text-sm font-bold ${Number(t.montant)>=0?'text-green-600':'text-red-600'}`}>{fmt(Math.abs(t.montant))}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>)}
+      </div>
+
+      {/* Abonnements */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <SectionHeader title="Abonnements" action={
+          <div className="flex gap-2">
+            <Btn size="sm" variant="success" onClick={generateSubscriptionTx}>Générer ce mois</Btn>
+            <Btn size="sm" variant="primary" onClick={()=>{setSelectedSub(null);setSubModal(true);}}>+ Ajouter</Btn>
+          </div>
+        }/>
+        {(data.bank.subscriptions||[]).length===0 ? <EmptyState message="Aucun abonnement" icon="🔄"/> : (
+          <div className="space-y-2">
+            {(data.bank.subscriptions||[]).map(s=>(
+              <div key={s.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${s.active?'bg-green-400':'bg-gray-300'}`}/>
+                  <div>
+                    <div className="text-sm font-medium text-gray-800">{s.name}</div>
+                    <div className="text-xs text-gray-500">{s.category} · Jour {s.day}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold text-red-600">{fmt(s.amount)}/mois</span>
+                  <button onClick={()=>toggleSubActive(s.id)} className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.active?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500'}`}>
+                    {s.active?'Actif':'Inactif'}
+                  </button>
+                  <button onClick={()=>{setSelectedSub(s);setSubModal(true);}} className="text-blue-400 hover:text-blue-600 text-xs">Éditer</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <ExpenseModal open={expenseModal} onClose={()=>{setExpenseModal(false);setSelectedExpense(null);}} expense={selectedExpense} onSave={saveExpense} onDelete={deleteExpense}/>
+      <TxModal open={txModal} onClose={()=>{setTxModal(false);setSelectedTx(null);}} tx={selectedTx} onSave={saveTx} onDelete={deleteTx}/>
+      <SubModal open={subModal} onClose={()=>{setSubModal(false);setSelectedSub(null);}} sub={selectedSub} onSave={saveSub} onDelete={deleteSub}/>
+    </div>
+  );
+}
+
+// ============================================================
+// LEDGER MODULE (Grand Livre Unifié)
+// ============================================================
+function LedgerModule({data, onNavigate}) {
+  const [periodeFilter, setPeriodeFilter] = React.useState('Ce mois');
+  const [typeFilter, setTypeFilter] = React.useState('Tous');
+  const [sourceFilter, setSourceFilter] = React.useState('Toutes');
+  const [auteurFilter, setAuteurFilter] = React.useState('Tous');
+  const [search, setSearch] = React.useState('');
+
+  const allEntries = React.useMemo(() => {
+    const entries = [];
+
+    // Bank transactions (non-Annulé)
+    (data.bank.transactions||[]).filter(t=>t.statut!=='Annulé').forEach(t => {
+      entries.push({
+        id: 'bank_'+t.id, sourceId:t.id, type:'bank',
+        date:t.date, label:t.label||'', montant:Number(t.montant)||0,
+        auteur:t.auteur||'', source:'Banque', category:''
+      });
+    });
+
+    // Expenses
+    (data.expenses||[]).forEach(e => {
+      entries.push({
+        id: 'exp_'+e.id, sourceId:e.id, type:'expense',
+        date:e.date, label:e.titre||'', montant:-Math.abs(Number(e.montant)||0),
+        auteur:e.payePar||'', source:'Avances', category:e.categorie||''
+      });
+    });
+
+    // Contract payments
+    (data.contracts||[]).forEach(c => {
+      if(c.statut==='Annulé') return;
+      (c.payments||[]).forEach(p => {
+        entries.push({
+          id: 'pay_'+p.id, sourceId:p.id, type:'contract',
+          date:p.date, label:`${c.client} – ${c.prestation}`,
+          montant:Math.abs(Number(p.montant)||0), auteur:p.auteur||'',
+          source:'Contrats', category:'', contractId:c.id
+        });
+      });
+    });
+
+    return entries.sort((a,b)=>new Date(b.date)-new Date(a.date));
+  }, [data]);
+
+  const filtered = React.useMemo(() => {
+    const now = new Date();
+    return allEntries.filter(e => {
+      // Période
+      if(periodeFilter==='Ce mois') {
+        const mk = currentMonthKey();
+        if(!e.date||e.date.substring(0,7)!==mk) return false;
+      } else if(periodeFilter==='30 jours') {
+        if(!e.date) return false;
+        const diff = (now-new Date(e.date+'T00:00:00'))/(1000*60*60*24);
+        if(diff>30) return false;
+      }
+      // Type
+      if(typeFilter==='Entrée' && e.montant<=0) return false;
+      if(typeFilter==='Sortie' && e.montant>=0) return false;
+      // Source
+      if(sourceFilter!=='Toutes' && e.source!==sourceFilter) return false;
+      // Auteur
+      if(auteurFilter!=='Tous' && e.auteur!==auteurFilter) return false;
+      // Search
+      if(search) {
+        const q = normalize(search);
+        if(!normalize(e.label).includes(q)&&!normalize(e.category).includes(q)) return false;
+      }
+      return true;
+    });
+  }, [allEntries, periodeFilter, typeFilter, sourceFilter, auteurFilter, search]);
+
+  const kpis = React.useMemo(() => {
+    const entrees = filtered.filter(e=>e.montant>0).reduce((s,e)=>s+e.montant,0);
+    const sorties = filtered.filter(e=>e.montant<0).reduce((s,e)=>s+Math.abs(e.montant),0);
+    const balance = entrees - sorties;
+    const avancesMicka = filtered.filter(e=>e.type==='expense'&&e.auteur==='Micka').reduce((s,e)=>s+Math.abs(e.montant),0);
+    const avancesCesar = filtered.filter(e=>e.type==='expense'&&e.auteur==='César').reduce((s,e)=>s+Math.abs(e.montant),0);
+    return {entrees, sorties, balance, avancesMicka, avancesCesar};
+  }, [filtered]);
+
+  const sourceBadge = {bank:'bg-indigo-100 text-indigo-700', expense:'bg-amber-100 text-amber-700', contract:'bg-green-100 text-green-700'};
+  const sourceLabels = {bank:'Banque', expense:'Avances', contract:'Contrat'};
+
+  const handleRowClick = (e) => {
+    if(e.type==='bank') onNavigate('bank',{type:'bankTx',id:e.sourceId});
+    else if(e.type==='expense') onNavigate('bank',{type:'expense',id:e.sourceId});
+    else if(e.type==='contract') onNavigate('contracts',{id:e.contractId,tab:'paiements'});
+  };
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold text-gray-800">Grand Livre Unifié</h1>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <KPICard label="Entrées" value={fmt(kpis.entrees)} color="green"/>
+        <KPICard label="Sorties" value={fmt(kpis.sorties)} color="red"/>
+        <KPICard label="Balance" value={fmt(kpis.balance)} color={kpis.balance>=0?'blue':'red'}/>
+        <KPICard label="Avances Micka" value={fmt(kpis.avancesMicka)} color="indigo"/>
+        <KPICard label="Avances César" value={fmt(kpis.avancesCesar)} color="green"/>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div className="flex flex-wrap gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Période</label>
+            <select className={`${selectCls} w-36`} value={periodeFilter} onChange={e=>setPeriodeFilter(e.target.value)}>
+              {['Ce mois','30 jours','Toute durée'].map(p=><option key={p}>{p}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+            <select className={`${selectCls} w-28`} value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
+              {['Tous','Entrée','Sortie'].map(t=><option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Source</label>
+            <select className={`${selectCls} w-32`} value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)}>
+              {['Toutes','Banque','Contrats','Avances'].map(s=><option key={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Auteur</label>
+            <select className={`${selectCls} w-28`} value={auteurFilter} onChange={e=>setAuteurFilter(e.target.value)}>
+              {['Tous','Micka','César'].map(a=><option key={a}>{a}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Rechercher</label>
+            <input className={`${inputCls} w-48`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Label, catégorie..."/>
+          </div>
+        </div>
+      </div>
+
+      {filtered.length===0 ? <EmptyState message="Aucune entrée" icon="📒"/> : (<>
+        {/* Desktop */}
+        <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>{['Date','Label','Source','Auteur','Montant'].map(h=><th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3">{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {filtered.map(e=>(
+                <tr key={e.id} onClick={()=>handleRowClick(e)} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors">
+                  <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(e.date)}</td>
+                  <td className="px-4 py-3 text-gray-800 max-w-[300px] truncate">
+                    {e.label}
+                    {e.category && <span className="text-xs text-gray-400 ml-1">({e.category})</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${sourceBadge[e.type]||'bg-gray-100 text-gray-600'}`}>{sourceLabels[e.type]||e.source}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {e.auteur && <StatusBadge status={e.auteur}/>}
+                  </td>
+                  <td className={`px-4 py-3 font-bold text-right ${e.montant>=0?'text-green-600':'text-red-600'}`}>
+                    {e.montant>=0?'+':''}{fmt(e.montant)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile */}
+        <div className="md:hidden space-y-2">
+          {filtered.map(e=>(
+            <div key={e.id} onClick={()=>handleRowClick(e)} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 cursor-pointer flex items-center justify-between">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-gray-800 truncate">{e.label}</div>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <span className="text-xs text-gray-400">{formatDate(e.date)}</span>
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${sourceBadge[e.type]||'bg-gray-100'}`}>{sourceLabels[e.type]}</span>
+                </div>
+              </div>
+              <div className={`font-bold text-base ml-3 ${e.montant>=0?'text-green-600':'text-red-600'}`}>
+                {e.montant>=0?'+':''}{fmt(Math.abs(e.montant))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </>)}
+    </div>
+  );
+}
+
+// ============================================================
+// DRIVE & LIENS MODULE
+// ============================================================
+function DriveModule({data, setData}) {
+  const addToast = useToast();
+  const [editMode, setEditMode] = React.useState(false);
+  const [newName, setNewName] = React.useState('');
+  const [newUrl, setNewUrl] = React.useState('');
+
+  const links = data.config?.driveLinks || {};
+
+  const addLink = () => {
+    if(!newName.trim()||!newUrl.trim()) { addToast('Nom et URL requis','error'); return; }
+    setData(d => ({...d, config:{...d.config, driveLinks:{...(d.config?.driveLinks||{}), [newName.trim()]:newUrl.trim()}}}));
+    setNewName('');
+    setNewUrl('');
+    addToast('Lien ajouté','success');
+  };
+
+  const removeLink = (name) => {
+    setData(d => {
+      const dl = {...(d.config?.driveLinks||{})};
+      delete dl[name];
+      return {...d, config:{...d.config, driveLinks:dl}};
+    });
+    addToast('Lien supprimé','success');
+  };
+
+  const linkIcons = {'Google Drive':'📁','Notion':'📝','Calendly':'📅','Linear':'📋'};
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">Drive & Liens</h1>
+        <Btn variant={editMode?'secondary':'outline'} onClick={()=>setEditMode(v=>!v)}>{editMode?'Terminer':'Modifier'}</Btn>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        {Object.entries(links).map(([name, url]) => (
+          <div key={name} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex items-start justify-between group">
+            <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0 hover:text-blue-600 transition-colors">
+              <span className="text-2xl">{linkIcons[name]||'🔗'}</span>
+              <div className="min-w-0">
+                <div className="font-semibold text-gray-800 text-sm">{name}</div>
+                <div className="text-xs text-gray-400 truncate mt-0.5">{url}</div>
+              </div>
+            </a>
+            {editMode && (
+              <button onClick={()=>removeLink(name)} className="text-gray-200 hover:text-red-500 text-xl leading-none ml-2 flex-shrink-0">&times;</button>
+            )}
+          </div>
+        ))}
+
+        {editMode && (
+          <div className="bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 p-5 space-y-3">
+            <div className="text-xs font-semibold text-gray-500 mb-2">Ajouter un lien</div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom</label><input className={inputCls} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Google Drive"/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">URL</label><input className={inputCls} value={newUrl} onChange={e=>setNewUrl(e.target.value)} placeholder="https://..."/></div>
+            <Btn size="sm" variant="primary" onClick={addLink}>Ajouter</Btn>
+          </div>
+        )}
+      </div>
+
+      {Object.keys(links).length===0 && !editMode && <EmptyState message="Aucun lien configuré" icon="🔗"/>}
+    </div>
+  );
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+const NAV_ITEMS = [
+  {id:'dashboard', label:'Dashboard', icon:'📊'},
+  {id:'ledger', label:'Grand Livre', icon:'📒'},
+  {id:'contracts', label:'Contrats', icon:'📄'},
+  {id:'tasks', label:'Tâches', icon:'✅'},
+  {id:'bank', label:'Banque & Frais', icon:'🏦'},
+  {id:'crm', label:'CRM', icon:'👥'},
+  {id:'resources', label:'Drive & Liens', icon:'🔗'},
+];
+
+function Sidebar({active, onChange, onExport, onImport, version, sidebarOpen, setSidebarOpen}) {
+  const fileRef = React.useRef();
+  const addToast = useToast();
+
+  const handleImportFile = (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    onImport(file);
+    e.target.value = '';
+  };
+
+  const content = (
+    <div className="flex flex-col h-full">
+      {/* Logo */}
+      <div className="px-5 py-5 border-b border-gray-100">
+        <div className="text-lg font-bold text-gray-800 leading-tight">EntrepreneurPRO</div>
+        <div className="text-xs text-gray-400 mt-0.5">{version}</div>
+      </div>
+      {/* Nav */}
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        {NAV_ITEMS.map(item => (
+          <button key={item.id} onClick={()=>{onChange(item.id);setSidebarOpen(false);}}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${active===item.id?'bg-blue-50 text-blue-700':'text-gray-600 hover:bg-gray-50 hover:text-gray-800'}`}>
+            <span className="text-base">{item.icon}</span>
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      {/* Bottom */}
+      <div className="px-3 py-4 border-t border-gray-100 space-y-2">
+        <button onClick={onExport} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-gray-500 hover:bg-gray-50 transition-colors">
+          <span>⬇️</span> Exporter JSON
+        </button>
+        <button onClick={()=>fileRef.current?.click()} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-gray-500 hover:bg-gray-50 transition-colors">
+          <span>⬆️</span> Importer JSON
+        </button>
+        <input type="file" ref={fileRef} accept=".json" className="hidden" onChange={handleImportFile}/>
+      </div>
+    </div>
+  );
+
+  return (<>
+    {/* Desktop sidebar */}
+    <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-60 bg-white border-r border-gray-100 shadow-sm z-30">
+      {content}
+    </aside>
+    {/* Mobile overlay */}
+    {sidebarOpen && (
+      <div className="md:hidden fixed inset-0 z-40 flex">
+        <div className="fixed inset-0 bg-black/40" onClick={()=>setSidebarOpen(false)}/>
+        <div className="relative w-60 bg-white h-full shadow-xl z-50">
+          {content}
+        </div>
+      </div>
+    )}
+  </>);
+}
+
+function App() {
+  const [data, setData] = React.useState(loadData);
+  const [activeModule, setActiveModule] = React.useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [contractDeepLink, setContractDeepLink] = React.useState(null);
+  const [bankDeepLink, setBankDeepLink] = React.useState(null);
+  const addToast = useToast();
+
+  React.useEffect(() => { saveData(data); }, [data]);
+
+  const onNavigate = (module, deepLinkData) => {
+    setActiveModule(module);
+    if(module==='contracts') setContractDeepLink(deepLinkData||null);
+    if(module==='bank') setBankDeepLink(deepLinkData||null);
+    setSidebarOpen(false);
+  };
+
+  const handleImport = (file) => {
+    doImport(file,
+      (imported) => { setData(imported); addToast('Import réussi','success'); },
+      (err) => addToast(err,'error')
+    );
+  };
+
+  const renderModule = () => {
+    switch(activeModule) {
+      case 'dashboard': return <Dashboard data={data} onNavigate={onNavigate}/>;
+      case 'contracts': return <ContractsModule data={data} setData={setData} deepLink={contractDeepLink} clearDeepLink={()=>setContractDeepLink(null)}/>;
+      case 'crm': return <CRMModule data={data} setData={setData} onNavigate={onNavigate}/>;
+      case 'tasks': return <TasksModule data={data} setData={setData}/>;
+      case 'bank': return <BankModule data={data} setData={setData} deepLink={bankDeepLink} clearDeepLink={()=>setBankDeepLink(null)}/>;
+      case 'ledger': return <LedgerModule data={data} onNavigate={onNavigate}/>;
+      case 'resources': return <DriveModule data={data} setData={setData}/>;
+      default: return <Dashboard data={data} onNavigate={onNavigate}/>;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Sidebar
+        active={activeModule}
+        onChange={setActiveModule}
+        onExport={()=>doExport(data)}
+        onImport={handleImport}
+        version={APP_VERSION}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+      />
+      {/* Mobile top bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
+        <button onClick={()=>setSidebarOpen(true)} className="text-gray-600 hover:text-gray-800 text-xl">☰</button>
+        <div className="font-semibold text-gray-800 text-sm">EntrepreneurPRO</div>
+        <div className="ml-auto text-xs text-gray-400">{APP_VERSION}</div>
+      </div>
+      {/* Main content */}
+      <main className="md:ml-60 pt-0 md:pt-0">
+        <div className="pt-14 md:pt-0 min-h-screen">
+          <div className="max-w-6xl mx-auto px-4 py-6">
+            {renderModule()}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <ToastProvider>
+    <App/>
+  </ToastProvider>
+);
+</script>
+</body>
+</html>
