@@ -8,6 +8,7 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -25,9 +26,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = "V14.1 – ERP & TRÉSORERIE";
+const APP_VERSION = "V15.0 – ERP & TRÉSORERIE ☁️";
 const SCHEMA_VERSION = 2;
 const LS_KEY = "entrepreneurpro_v14_data";
+
+// ============================================================
+// SUPABASE
+// ============================================================
+const SUPABASE_URL = 'https://yojvynoogknerelczxrf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_t9GZjHv8hlHUsuevsKd6RQ_Of_ZUasv';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const CONTRACT_STATUSES = ['En cours', 'Terminé', 'Annulé'];
 const TASK_STATUSES = ['À faire', 'En cours', 'Terminé'];
 const TASK_PRIORITIES = ['Haute', 'Moyenne', 'Basse'];
@@ -145,6 +153,9 @@ function loadData() {
 
 function saveData(d) {
   try { localStorage.setItem(LS_KEY, JSON.stringify(d)); } catch(e) {}
+  sb.from('app_data').upsert({id:1, data:d, updated_at:new Date().toISOString()}).then(({error}) => {
+    if(error) console.error('Supabase save error:', error);
+  });
 }
 
 function doExport(data) {
@@ -2020,7 +2031,7 @@ const NAV_ITEMS = [
   {id:'resources', label:'Drive & Liens', icon:'🔗'},
 ];
 
-function Sidebar({active, onChange, onExport, onImport, version, sidebarOpen, setSidebarOpen}) {
+function Sidebar({active, onChange, onExport, onImport, version, sidebarOpen, setSidebarOpen, syncStatus}) {
   const fileRef = React.useRef();
   const addToast = useToast();
 
@@ -2057,6 +2068,10 @@ function Sidebar({active, onChange, onExport, onImport, version, sidebarOpen, se
           <span>⬆️</span> Importer JSON
         </button>
         <input type="file" ref={fileRef} accept=".json" className="hidden" onChange={handleImportFile}/>
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs ${syncStatus==='ok'?'text-green-600':'text-red-500'}`}>
+          <span>{syncStatus==='ok'?'☁️':'⚠️'}</span>
+          {syncStatus==='ok' ? 'Supabase connecté' : 'Hors ligne'}
+        </div>
       </div>
     </div>
   );
@@ -2084,9 +2099,56 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [contractDeepLink, setContractDeepLink] = React.useState(null);
   const [bankDeepLink, setBankDeepLink] = React.useState(null);
+  const [synced, setSynced] = React.useState(false);
+  const [syncStatus, setSyncStatus] = React.useState('loading'); // 'loading' | 'ok' | 'error'
+  const isRemoteUpdate = React.useRef(false);
   const addToast = useToast();
 
-  React.useEffect(() => { saveData(data); }, [data]);
+  // On mount: fetch from Supabase + subscribe realtime
+  React.useEffect(() => {
+    let channel;
+    (async () => {
+      try {
+        const { data: rows, error } = await sb.from('app_data').select('data').eq('id', 1).single();
+        if (!error && rows && rows.data) {
+          const remote = securizeData(rows.data);
+          isRemoteUpdate.current = true;
+          setData(remote);
+          try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
+        } else {
+          // Première connexion : pousser les données locales sur Supabase
+          const local = loadData();
+          await sb.from('app_data').upsert({id:1, data:local, updated_at:new Date().toISOString()});
+        }
+        setSyncStatus('ok');
+      } catch(e) {
+        console.error('Supabase load error:', e);
+        setSyncStatus('error');
+      }
+      setSynced(true);
+    })();
+
+    // Realtime
+    channel = sb.channel('app_data_realtime')
+      .on('postgres_changes', {event:'UPDATE', schema:'public', table:'app_data'}, (payload) => {
+        if(!payload.new?.data) return;
+        const incoming = securizeData(payload.new.data);
+        isRemoteUpdate.current = true;
+        setData(incoming);
+        try { localStorage.setItem(LS_KEY, JSON.stringify(incoming)); } catch(e) {}
+        addToast('Synchronisé ☁️', 'info');
+      })
+      .subscribe();
+
+    return () => { if(channel) sb.removeChannel(channel); };
+  }, []);
+
+  // Sauvegarde Supabase à chaque changement (sauf mises à jour reçues du realtime)
+  React.useEffect(() => {
+    if(!synced) return;
+    if(isRemoteUpdate.current) { isRemoteUpdate.current = false; return; }
+    saveData(data);
+  }, [data, synced]);
 
   const onNavigate = (module, deepLinkData) => {
     setActiveModule(module);
@@ -2115,6 +2177,17 @@ function App() {
     }
   };
 
+  if(!synced) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4 animate-pulse">☁️</div>
+          <div className="text-sm text-gray-500">Connexion à Supabase...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Sidebar
@@ -2125,6 +2198,7 @@ function App() {
         version={APP_VERSION}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
+        syncStatus={syncStatus}
       />
       {/* Mobile top bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
