@@ -54,6 +54,7 @@ const BADGE_COLORS = {
   'Non payé': 'bg-red-100 text-red-700',
   'Partiel': 'bg-amber-100 text-amber-700',
   'Payé': 'bg-green-100 text-green-700',
+  'Surpayé': 'bg-red-200 text-red-800',
   'À faire': 'bg-slate-100 text-slate-700',
   'Validé': 'bg-green-100 text-green-700',
   'Contact': 'bg-slate-100 text-slate-700',
@@ -94,7 +95,7 @@ function buildLedgerEntries(data) {
   (data.contracts||[]).forEach(c => {
     if(c.statut==='Annulé') return;
     (c.payments||[]).forEach(p => {
-      entries.push({id:'pay_'+p.id, sourceId:p.id, type:'contract', date:p.date, label:`${c.client} – ${c.prestation}`, montant:Math.abs(Number(p.montant)||0), auteur:p.auteur||'', source:'Contrats', category:'', contractId:c.id, assignedTo:c.assignedTo});
+      entries.push({id:'pay_'+p.id, sourceId:p.id, type:'contract', date:p.date, label:`${c.client} – ${c.prestation}`, montant:Math.abs(Number(p.montant)||0), auteur:p.auteur||'', source:'Contrats', category:'', contractId:c.id, assignedTo:c.assignedTo, payNote:p.note||''});
     });
   });
   return entries.sort((a,b)=>new Date(b.date)-new Date(a.date));
@@ -412,7 +413,22 @@ function Dashboard({data, onNavigate}) {
       .sort((a,b) => new Date(a.dateFin) - new Date(b.dateFin))
       .slice(0,3);
 
-    return {caSigne, caEncaisse, reste, potentiel, netMicka, netCesar, ecart, recommended, urgent, totalEntrees, totalSorties, balance};
+    const resteAEncaisserList = data.contracts
+      .filter(c => c.statut !== 'Annulé')
+      .map(c => {
+        const totalPaid = (c.payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0);
+        const resteC = (Number(c.montant)||0) - totalPaid;
+        return {...c, totalPaid, resteC};
+      })
+      .filter(c => c.resteC > 0)
+      .sort((a,b) => {
+        if(a.dateFin && b.dateFin) return new Date(a.dateFin)-new Date(b.dateFin);
+        if(a.dateFin) return -1;
+        if(b.dateFin) return 1;
+        return 0;
+      });
+
+    return {caSigne, caEncaisse, reste, potentiel, netMicka, netCesar, ecart, recommended, urgent, totalEntrees, totalSorties, balance, resteAEncaisserList};
   }, [data]);
 
   return (
@@ -444,26 +460,33 @@ function Dashboard({data, onNavigate}) {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
         <h2 className="text-base font-semibold text-gray-800 mb-4">💳 Trésorerie Duo</h2>
         <div className="space-y-4">
+          {(() => {
+            const maxNet = Math.max(Math.abs(stats.netMicka), Math.abs(stats.netCesar));
+            const wMicka = maxNet > 0 ? Math.min(100, Math.round(Math.abs(stats.netMicka)/maxNet*100)) : 0;
+            const wCesar = maxNet > 0 ? Math.min(100, Math.round(Math.abs(stats.netCesar)/maxNet*100)) : 0;
+            return (<>
           {/* Micka */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <span className="text-sm font-medium text-indigo-700">Micka</span>
-              <span className="text-sm font-bold text-indigo-700">{fmt(stats.netMicka)}</span>
+              <span className={`text-sm font-bold ${stats.netMicka >= 0 ? 'text-indigo-700' : 'text-red-500'}`}>{fmt(stats.netMicka)}</span>
             </div>
             <div className="w-full bg-gray-100 rounded-full h-2">
-              <div className="bg-indigo-500 h-2 rounded-full transition-all" style={{width: (stats.netMicka+stats.netCesar)>0 ? `${Math.round(stats.netMicka/(stats.netMicka+stats.netCesar)*100)}%` : '0%'}}/>
+              <div className={`h-2 rounded-full transition-all ${stats.netMicka >= 0 ? 'bg-indigo-500' : 'bg-indigo-300'}`} style={{width:`${wMicka}%`}}/>
             </div>
           </div>
           {/* César */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <span className="text-sm font-medium text-emerald-700">César</span>
-              <span className="text-sm font-bold text-emerald-700">{fmt(stats.netCesar)}</span>
+              <span className={`text-sm font-bold ${stats.netCesar >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>{fmt(stats.netCesar)}</span>
             </div>
             <div className="w-full bg-gray-100 rounded-full h-2">
-              <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{width: (stats.netMicka+stats.netCesar)>0 ? `${Math.round(stats.netCesar/(stats.netMicka+stats.netCesar)*100)}%` : '0%'}}/>
+              <div className={`h-2 rounded-full transition-all ${stats.netCesar >= 0 ? 'bg-emerald-500' : 'bg-emerald-300'}`} style={{width:`${wCesar}%`}}/>
             </div>
           </div>
+          </>);
+          })()}
           <div className="flex items-center justify-between pt-2 border-t border-gray-100">
             <span className="text-xs text-gray-500">Écart duo: {fmt(stats.ecart)}</span>
             {stats.recommended && (
@@ -473,6 +496,50 @@ function Dashboard({data, onNavigate}) {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Reste à encaisser */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h2 className="text-base font-semibold text-gray-800 mb-4">💼 Reste à encaisser</h2>
+        {stats.resteAEncaisserList.length === 0 ? <EmptyState message="Tout est encaissé" icon="✅"/> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs font-semibold text-gray-400 border-b border-gray-100">
+                  <th className="pb-2 pr-3">Client</th>
+                  <th className="pb-2 pr-3">Total</th>
+                  <th className="pb-2 pr-3">Encaissé</th>
+                  <th className="pb-2 pr-3">Reste</th>
+                  <th className="pb-2">Échéance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.resteAEncaisserList.map(c => {
+                  const days = daysUntil(c.dateFin);
+                  const urgent = days !== null && days <= 7;
+                  return (
+                    <tr key={c.id} onClick={()=>onNavigate('contracts',{id:c.id,tab:'paiements'})} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors">
+                      <td className="py-2.5 pr-3">
+                        <div className="font-medium text-gray-800">{c.client}</div>
+                        <div className="text-xs text-gray-400 truncate max-w-[140px]">{c.prestation}</div>
+                      </td>
+                      <td className="py-2.5 pr-3 text-gray-600">{fmt(c.montant)}</td>
+                      <td className="py-2.5 pr-3 text-green-600 font-medium">{fmt(c.totalPaid)}</td>
+                      <td className="py-2.5 pr-3 font-bold text-amber-600">{fmt(c.resteC)}</td>
+                      <td className="py-2.5">
+                        {c.dateFin ? (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${urgent ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {urgent ? `⚡ J-${days}` : formatDate(c.dateFin)}
+                          </span>
+                        ) : <span className="text-xs text-gray-300">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Dossiers urgents */}
@@ -707,8 +774,17 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
             <KPICard label="Encaissé" value={fmt(paidTotal)} color="green"/>
             <KPICard label="Reste" value={fmt(Math.max(0,montantNum-paidTotal))} color="amber"/>
           </div>
+          {paidTotal > montantNum && montantNum > 0 && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <span className="text-red-500 text-lg leading-none mt-0.5">⚠️</span>
+              <div>
+                <div className="text-sm font-semibold text-red-700">Sur-encaissement détecté</div>
+                <div className="text-xs text-red-600 mt-0.5">Les paiements ({fmt(paidTotal)}) dépassent le montant du contrat ({fmt(montantNum)}) de <span className="font-bold">+{fmt(paidTotal - montantNum)}</span>. Vérifiez les saisies.</div>
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-3">
-            <StatusBadge status={ps}/>
+            <StatusBadge status={paidTotal > montantNum && montantNum > 0 ? 'Surpayé' : ps}/>
             <Btn size="sm" variant="outline" onClick={()=>setShowAddPayment(v=>!v)}>+ Ajouter paiement</Btn>
           </div>
           {showAddPayment && (
@@ -903,6 +979,8 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
             <tbody>
               {filtered.map(c => {
                 const ps = calcPaymentStatus(c.montant, c.payments);
+                const totalPaid = (c.payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0);
+                const isSurpaye = totalPaid > (Number(c.montant)||0) && (Number(c.montant)||0) > 0;
                 return (
                   <tr key={c.id} onClick={()=>openContract(c)} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors">
                     <td className="px-4 py-3 font-medium text-gray-800">{c.client}</td>
@@ -910,7 +988,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                     <td className="px-4 py-3 font-semibold">{fmt(c.montant)}</td>
                     <td className="px-4 py-3"><StatusBadge status={c.assignedTo}/></td>
                     <td className="px-4 py-3"><StatusBadge status={c.statut}/></td>
-                    <td className="px-4 py-3"><StatusBadge status={ps}/></td>
+                    <td className="px-4 py-3"><StatusBadge status={isSurpaye ? 'Surpayé' : ps}/></td>
                     <td className="px-4 py-3"><ExpiryBadge dateFin={c.dateFin} statut={c.statut}/></td>
                     <td className="px-4 py-3"><button className="text-blue-500 hover:text-blue-700 text-xs font-medium">Ouvrir →</button></td>
                   </tr>
@@ -1805,11 +1883,15 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
 // LEDGER MODULE (Grand Livre Unifié)
 // ============================================================
 function LedgerModule({data, onNavigate}) {
-  const [periodeFilter, setPeriodeFilter] = React.useState('Ce mois');
+  const [periodeMode, setPeriodeMode] = React.useState('Mois');
+  const [moisFilter, setMoisFilter] = React.useState(new Date().getMonth() + 1);
+  const [anneeFilter, setAnneeFilter] = React.useState(new Date().getFullYear());
   const [typeFilter, setTypeFilter] = React.useState('Tous');
   const [sourceFilter, setSourceFilter] = React.useState('Toutes');
   const [auteurFilter, setAuteurFilter] = React.useState('Tous');
   const [search, setSearch] = React.useState('');
+  const MOIS_LABELS = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
+  const ANNEES = [new Date().getFullYear()-1, new Date().getFullYear(), new Date().getFullYear()+1];
 
   const allEntries = React.useMemo(() => buildLedgerEntries(data), [data]);
 
@@ -1817,10 +1899,11 @@ function LedgerModule({data, onNavigate}) {
     const now = new Date();
     return allEntries.filter(e => {
       // Période
-      if(periodeFilter==='Ce mois') {
-        const mk = currentMonthKey();
-        if(!e.date||e.date.substring(0,7)!==mk) return false;
-      } else if(periodeFilter==='30 jours') {
+      if(periodeMode==='Mois') {
+        if(!e.date) return false;
+        const d = new Date(e.date+'T00:00:00');
+        if(d.getMonth()+1 !== moisFilter || d.getFullYear() !== anneeFilter) return false;
+      } else if(periodeMode==='30 jours') {
         if(!e.date) return false;
         const diff = (now-new Date(e.date+'T00:00:00'))/(1000*60*60*24);
         if(diff>30) return false;
@@ -1835,11 +1918,11 @@ function LedgerModule({data, onNavigate}) {
       // Search
       if(search) {
         const q = normalize(search);
-        if(!normalize(e.label).includes(q)&&!normalize(e.category).includes(q)) return false;
+        if(!normalize(e.label).includes(q)&&!normalize(e.category).includes(q)&&!normalize(e.payNote||'').includes(q)&&!normalize(e.auteur||'').includes(q)) return false;
       }
       return true;
     });
-  }, [allEntries, periodeFilter, typeFilter, sourceFilter, auteurFilter, search]);
+  }, [allEntries, periodeMode, moisFilter, anneeFilter, typeFilter, sourceFilter, auteurFilter, search]);
 
   const kpis = React.useMemo(() => {
     const entrees = filtered.filter(e=>e.montant>0).reduce((s,e)=>s+e.montant,0);
@@ -1876,11 +1959,25 @@ function LedgerModule({data, onNavigate}) {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
         <div className="flex flex-wrap gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Période</label>
-            <select className={`${selectCls} w-36`} value={periodeFilter} onChange={e=>setPeriodeFilter(e.target.value)}>
-              {['Ce mois','30 jours','Toute durée'].map(p=><option key={p}>{p}</option>)}
+            <label className="block text-xs font-medium text-gray-600 mb-1">Mode</label>
+            <select className={`${selectCls} w-32`} value={periodeMode} onChange={e=>setPeriodeMode(e.target.value)}>
+              {['Mois','30 jours','Toute durée'].map(p=><option key={p}>{p}</option>)}
             </select>
           </div>
+          {periodeMode==='Mois' && (<>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Mois</label>
+              <select className={`${selectCls} w-24`} value={moisFilter} onChange={e=>setMoisFilter(Number(e.target.value))}>
+                {MOIS_LABELS.map((m,i)=><option key={i+1} value={i+1}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Année</label>
+              <select className={`${selectCls} w-24`} value={anneeFilter} onChange={e=>setAnneeFilter(Number(e.target.value))}>
+                {ANNEES.map(a=><option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+          </>)}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
             <select className={`${selectCls} w-28`} value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
@@ -1920,6 +2017,7 @@ function LedgerModule({data, onNavigate}) {
                   <td className="px-4 py-3 text-gray-800 max-w-[300px] truncate">
                     {e.label}
                     {e.category && <span className="text-xs text-gray-400 ml-1">({e.category})</span>}
+                    {e.payNote && <span className="text-xs text-blue-500 ml-1">· {e.payNote}</span>}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${sourceBadge[e.type]||'bg-gray-100 text-gray-600'}`}>{sourceLabels[e.type]||e.source}</span>
