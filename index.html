@@ -3,12 +3,13 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>EntrepreneurPRO V15.3</title>
+<title>EntrepreneurPRO V15.4</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -26,7 +27,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = "V15.3 – ERP & TRÉSORERIE ☁️";
+const APP_VERSION = "V15.4 – ERP & TRÉSORERIE ☁️";
 const SCHEMA_VERSION = 2;
 const LS_KEY = "entrepreneurpro_v14_data";
 
@@ -2134,10 +2135,301 @@ function DriveModule({data, setData}) {
 }
 
 // ============================================================
+// ANALYTICS MODULE
+// ============================================================
+const CHART_COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#14b8a6'];
+const MONTH_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+
+function ChartBlock({title, icon, children}) {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+      <h3 className="text-sm font-semibold text-gray-700 mb-4">{icon} {title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function ChartCanvas({type, data, options}) {
+  const canvasRef = React.useRef(null);
+  const chartRef = React.useRef(null);
+  const depKey = JSON.stringify({type, labels: data.labels, vals: (data.datasets||[]).map(d=>d.data)});
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if(!canvas || !window.Chart) return;
+    if(chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+    chartRef.current = new window.Chart(canvas, {
+      type,
+      data,
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: {display: true, labels:{boxWidth:12,font:{size:11}}},
+          tooltip: {callbacks:{label: ctx => ' ' + fmt(ctx.raw || 0)}}
+        },
+        ...( options || {})
+      }
+    });
+    return () => { if(chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
+  }, [depKey]);
+
+  return <canvas ref={canvasRef}/>;
+}
+
+function AnalyticsModule({data}) {
+  const now = new Date();
+  const [filterYear, setFilterYear] = React.useState(now.getFullYear());
+
+  const entries = React.useMemo(() => buildLedgerEntries(data), [data]);
+
+  const allYears = React.useMemo(() => {
+    const years = new Set();
+    entries.forEach(e => { if(e.date) years.add(+e.date.substring(0,4)); });
+    (data.expenses||[]).forEach(e => { if(e.date) years.add(+e.date.substring(0,4)); });
+    if(years.size === 0) years.add(now.getFullYear());
+    return [...years].sort();
+  }, [entries, data.expenses]);
+
+  // 1. CA mensuel par année (toutes les années)
+  const caMonthlyByYear = React.useMemo(() => {
+    const map = {};
+    entries.filter(e=>e.type==='contract').forEach(e => {
+      const y = +e.date.substring(0,4);
+      const m = +e.date.substring(5,7) - 1;
+      if(!map[y]) map[y] = Array(12).fill(0);
+      map[y][m] += e.montant;
+    });
+    return map;
+  }, [entries]);
+
+  // 2. CA annuel total
+  const caAnnuel = React.useMemo(() => {
+    const map = {};
+    entries.filter(e=>e.type==='contract').forEach(e => {
+      const y = +e.date.substring(0,4);
+      map[y] = (map[y]||0) + e.montant;
+    });
+    return map;
+  }, [entries]);
+
+  // 3. CA cumulé pour filterYear
+  const caCumule = React.useMemo(() => {
+    const monthly = Array(12).fill(0);
+    entries.filter(e=>e.type==='contract' && +e.date.substring(0,4)===filterYear).forEach(e => {
+      monthly[+e.date.substring(5,7)-1] += e.montant;
+    });
+    let cum = 0;
+    return monthly.map(v => { cum += v; return cum; });
+  }, [entries, filterYear]);
+
+  // 4. Dépenses par catégorie (filterYear)
+  const depensesCategorie = React.useMemo(() => {
+    const map = {};
+    (data.expenses||[]).filter(e => +e.date.substring(0,4)===filterYear).forEach(e => {
+      const cat = e.categorie||'Autre';
+      map[cat] = (map[cat]||0) + Math.abs(Number(e.montant)||0);
+    });
+    return map;
+  }, [data.expenses, filterYear]);
+
+  // 5. Dépenses mensuelles (filterYear)
+  const depensesMensuelles = React.useMemo(() => {
+    const monthly = Array(12).fill(0);
+    (data.expenses||[]).filter(e => +e.date.substring(0,4)===filterYear).forEach(e => {
+      monthly[+e.date.substring(5,7)-1] += Math.abs(Number(e.montant)||0);
+    });
+    return monthly;
+  }, [data.expenses, filterYear]);
+
+  // 6. CA par client (filterYear)
+  const caClient = React.useMemo(() => {
+    const map = {};
+    (data.contracts||[]).filter(c=>c.statut!=='Annulé').forEach(c => {
+      (c.payments||[]).filter(p=>+p.date.substring(0,4)===filterYear).forEach(p => {
+        map[c.client] = (map[c.client]||0) + Math.abs(Number(p.montant)||0);
+      });
+    });
+    return map;
+  }, [data.contracts, filterYear]);
+
+  // 7. Encaissements par associé (filterYear)
+  const caAssocie = React.useMemo(() => {
+    const map = {Micka:0, César:0};
+    entries.filter(e=>e.type==='contract' && +e.date.substring(0,4)===filterYear).forEach(e => {
+      if(map[e.assignedTo] !== undefined) map[e.assignedTo] += e.montant;
+    });
+    return map;
+  }, [entries, filterYear]);
+
+  // Build chart data objects
+  const caMonthlyChartData = {
+    labels: MONTH_SHORT,
+    datasets: allYears.map((y,i) => ({
+      label: String(y),
+      data: caMonthlyByYear[y] || Array(12).fill(0),
+      backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + 'aa',
+      borderColor: CHART_COLORS[i % CHART_COLORS.length],
+      borderWidth: 1,
+    }))
+  };
+
+  const caAnnuelChartData = {
+    labels: allYears.map(String),
+    datasets: [{
+      label: 'CA Total',
+      data: allYears.map(y => caAnnuel[y]||0),
+      backgroundColor: allYears.map((_,i) => CHART_COLORS[i%CHART_COLORS.length]+'aa'),
+      borderColor: allYears.map((_,i) => CHART_COLORS[i%CHART_COLORS.length]),
+      borderWidth: 1,
+    }]
+  };
+
+  const caCumuleChartData = {
+    labels: MONTH_SHORT,
+    datasets: [{
+      label: `CA cumulé ${filterYear}`,
+      data: caCumule,
+      fill: true,
+      backgroundColor: '#6366f118',
+      borderColor: '#6366f1',
+      tension: 0.4,
+      pointBackgroundColor: '#6366f1',
+      pointRadius: 4,
+    }]
+  };
+
+  const depCatLabels = Object.keys(depensesCategorie).sort((a,b)=>depensesCategorie[b]-depensesCategorie[a]);
+  const depCatChartData = {
+    labels: depCatLabels,
+    datasets: [{
+      data: depCatLabels.map(k => depensesCategorie[k]),
+      backgroundColor: CHART_COLORS.slice(0, depCatLabels.length),
+      borderWidth: 1,
+    }]
+  };
+
+  const depMensuellesChartData = {
+    labels: MONTH_SHORT,
+    datasets: [{
+      label: 'Dépenses',
+      data: depensesMensuelles,
+      backgroundColor: '#ef444488',
+      borderColor: '#ef4444',
+      borderWidth: 1,
+    }]
+  };
+
+  const clientLabels = Object.keys(caClient).sort((a,b)=>caClient[b]-caClient[a]);
+  const caClientChartData = {
+    labels: clientLabels,
+    datasets: [{
+      label: 'CA',
+      data: clientLabels.map(k=>caClient[k]),
+      backgroundColor: CHART_COLORS.slice(0, clientLabels.length).map(c=>c+'bb'),
+      borderColor: CHART_COLORS.slice(0, clientLabels.length),
+      borderWidth: 1,
+    }]
+  };
+
+  const associeChartData = {
+    labels: ['Micka', 'César'],
+    datasets: [{
+      label: 'Encaissements',
+      data: [caAssocie.Micka, caAssocie.César],
+      backgroundColor: ['#6366f1aa','#10b981aa'],
+      borderColor: ['#6366f1','#10b981'],
+      borderWidth: 1,
+    }]
+  };
+
+  const noLegend = {plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw||0)}}}};
+  const withLegendRight = {plugins:{legend:{display:true,position:'right',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw||0)}}}};
+
+  // KPI summary
+  const totalCA = allYears.reduce((s,y)=>s+(caAnnuel[y]||0), 0);
+  const totalDep = (data.expenses||[]).filter(e=>+e.date.substring(0,4)===filterYear).reduce((s,e)=>s+Math.abs(Number(e.montant)||0),0);
+  const totalCAYear = caAnnuel[filterYear]||0;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 flex-wrap">
+        <h1 className="text-2xl font-bold text-gray-800">Analytics / Pilotage</h1>
+        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{APP_VERSION}</span>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-wrap gap-4 items-end">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Année de référence</label>
+          <select className={`${selectCls} w-28`} value={filterYear} onChange={e=>setFilterYear(Number(e.target.value))}>
+            {allYears.map(y=><option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        <div className="flex gap-3">
+          <KPICard label={`CA ${filterYear}`} value={fmt(totalCAYear)} color="green" icon="💰"/>
+          <KPICard label={`Dépenses ${filterYear}`} value={fmt(totalDep)} color="red" icon="💸"/>
+          <KPICard label="CA global" value={fmt(totalCA)} color="blue" icon="📊"/>
+        </div>
+      </div>
+
+      {/* Charts grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* 1. CA mensuel par année - pleine largeur */}
+        <div className="lg:col-span-2">
+          <ChartBlock title="CA mensuel par année (comparaison)" icon="📈">
+            <ChartCanvas type="bar" data={caMonthlyChartData}/>
+          </ChartBlock>
+        </div>
+
+        {/* 2. CA annuel comparatif */}
+        <ChartBlock title="CA annuel comparatif" icon="📊">
+          <ChartCanvas type="bar" data={caAnnuelChartData} options={noLegend}/>
+        </ChartBlock>
+
+        {/* 3. CA cumulé */}
+        <ChartBlock title={`CA cumulé ${filterYear}`} icon="📉">
+          <ChartCanvas type="line" data={caCumuleChartData} options={noLegend}/>
+        </ChartBlock>
+
+        {/* 4. Dépenses par catégorie */}
+        <ChartBlock title={`Dépenses par catégorie ${filterYear}`} icon="💸">
+          {depCatLabels.length === 0
+            ? <EmptyState message="Aucune dépense cette année" icon="💸"/>
+            : <ChartCanvas type="doughnut" data={depCatChartData} options={withLegendRight}/>
+          }
+        </ChartBlock>
+
+        {/* 5. Dépenses mensuelles */}
+        <ChartBlock title={`Dépenses mensuelles ${filterYear}`} icon="📅">
+          <ChartCanvas type="bar" data={depMensuellesChartData} options={noLegend}/>
+        </ChartBlock>
+
+        {/* 6. CA par client */}
+        <ChartBlock title={`CA par client ${filterYear}`} icon="🏢">
+          {clientLabels.length === 0
+            ? <EmptyState message="Aucun encaissement cette année" icon="🏢"/>
+            : <ChartCanvas type="bar" data={caClientChartData} options={{...noLegend, indexAxis:'y'}}/>
+          }
+        </ChartBlock>
+
+        {/* 7. Encaissements par associé */}
+        <ChartBlock title={`Encaissements par associé ${filterYear}`} icon="👥">
+          <ChartCanvas type="bar" data={associeChartData} options={noLegend}/>
+        </ChartBlock>
+
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN APP
 // ============================================================
 const NAV_ITEMS = [
   {id:'dashboard', label:'Dashboard', icon:'📊'},
+  {id:'analytics', label:'Analytics', icon:'📈'},
   {id:'ledger', label:'Grand Livre', icon:'📒'},
   {id:'contracts', label:'Contrats', icon:'📄'},
   {id:'tasks', label:'Tâches', icon:'✅'},
@@ -2282,6 +2574,7 @@ function App() {
   const renderModule = () => {
     switch(activeModule) {
       case 'dashboard': return <Dashboard data={data} onNavigate={onNavigate}/>;
+      case 'analytics': return <AnalyticsModule data={data}/>;
       case 'contracts': return <ContractsModule data={data} setData={setData} deepLink={contractDeepLink} clearDeepLink={()=>setContractDeepLink(null)}/>;
       case 'crm': return <CRMModule data={data} setData={setData} onNavigate={onNavigate}/>;
       case 'tasks': return <TasksModule data={data} setData={setData}/>;
