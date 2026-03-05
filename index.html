@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>EntrepreneurPRO V15.4</title>
+<title>EntrepreneurPRO V15.5</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -27,7 +27,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = "V15.4 – ERP & TRÉSORERIE ☁️";
+const APP_VERSION = "V15.5 – ERP & TRÉSORERIE ☁️";
 const SCHEMA_VERSION = 2;
 const LS_KEY = "entrepreneurpro_v14_data";
 
@@ -46,6 +46,8 @@ const TX_TYPES = ['Achat', 'Sortie', 'Apport', 'Entrée'];
 const ASSIGNEES = ['Micka', 'César'];
 const IMPUTEES = ['Micka', 'César', 'Commun'];
 const PAYMENT_AUTHORS = ['Micka', 'César', 'Client'];
+const PAYMENT_TYPES = ['Virement', 'OPCO', 'Virement + OPCO', 'CB / Stripe', 'Espèces', 'Autre'];
+const OPCO_STATUSES = ['En attente', 'Accepté', 'Refusé', 'Payé'];
 const SOURCES = ['Réseau', 'LinkedIn', 'Referral', 'Cold Email', 'Site Web', 'Autre'];
 const EXPENSE_CATEGORIES = ['Transport', 'Repas', 'Logiciels', 'Matériel', 'Formation', 'Marketing', 'Autre'];
 
@@ -70,6 +72,15 @@ const BADGE_COLORS = {
   'Micka': 'bg-indigo-100 text-indigo-700',
   'César': 'bg-emerald-100 text-emerald-700',
   'Commun': 'bg-gray-100 text-gray-600',
+  'En attente': 'bg-amber-100 text-amber-700',
+  'Accepté': 'bg-green-100 text-green-700',
+  'Refusé': 'bg-red-100 text-red-700',
+  'Payé': 'bg-teal-100 text-teal-700',
+  'OPCO': 'bg-purple-100 text-purple-700',
+  'Virement': 'bg-blue-100 text-blue-700',
+  'Virement + OPCO': 'bg-violet-100 text-violet-700',
+  'CB / Stripe': 'bg-cyan-100 text-cyan-700',
+  'Espèces': 'bg-lime-100 text-lime-700',
 };
 
 // ============================================================
@@ -648,7 +659,7 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
       if(contract) {
         setForm({...contract, payments:[...(contract.payments||[])], actions:[...(contract.actions||[])]});
       } else {
-        setForm({id:null, clientId:'', client:'', prestation:'', montant:'', assignedTo:'Micka', statut:'En cours', dateDebut:todayStr(), dateFin:'', notes:'', payments:[], actions:[]});
+        setForm({id:null, clientId:'', client:'', prestation:'', montant:'', assignedTo:'Micka', statut:'En cours', dateSignature:todayStr(), dateDebut:todayStr(), dateFin:'', typePaiement:'Virement', montantOPCO:'', statutOPCO:'En attente', notes:'', payments:[], actions:[]});
       }
       setPayForm({date:todayStr(),montant:'',auteur:'Client',note:''});
       setActForm({date:todayStr(),type:'Note',titre:'',auteur:'Micka',notes:''});
@@ -754,6 +765,10 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
               </select>
             </div>
             <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date de signature</label>
+              <input className={inputCls} type="date" value={form.dateSignature||''} onChange={e=>setF('dateSignature',e.target.value)}/>
+            </div>
+            <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Date début</label>
               <input className={inputCls} type="date" value={form.dateDebut||''} onChange={e=>setF('dateDebut',e.target.value)}/>
             </div>
@@ -761,6 +776,24 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
               <label className="block text-xs font-medium text-gray-600 mb-1">Date fin</label>
               <input className={inputCls} type="date" value={form.dateFin||''} onChange={e=>setF('dateFin',e.target.value)}/>
             </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Type de paiement</label>
+              <select className={selectCls} value={form.typePaiement||'Virement'} onChange={e=>setF('typePaiement',e.target.value)}>
+                {PAYMENT_TYPES.map(t=><option key={t}>{t}</option>)}
+              </select>
+            </div>
+            {(form.typePaiement==='OPCO'||form.typePaiement==='Virement + OPCO') && (<>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Montant OPCO (€)</label>
+                <input className={inputCls} type="number" step="0.01" value={form.montantOPCO||''} onChange={e=>setF('montantOPCO',e.target.value)} placeholder="0"/>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Statut OPCO</label>
+                <select className={selectCls} value={form.statutOPCO||'En attente'} onChange={e=>setF('statutOPCO',e.target.value)}>
+                  {OPCO_STATUSES.map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+            </>)}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
@@ -980,7 +1013,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
         <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>{['Client','Prestation','Montant','Attribué','Statut','Paiement','Échéance',''].map(h=>(
+              <tr>{['Client','Prestation','Montant','Attribué','Statut','Paiement','Type paie.','Signature',''].map(h=>(
                 <th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3">{h}</th>
               ))}</tr>
             </thead>
@@ -989,15 +1022,20 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                 const ps = calcPaymentStatus(c.montant, c.payments);
                 const totalPaid = (c.payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0);
                 const isSurpaye = totalPaid > (Number(c.montant)||0) && (Number(c.montant)||0) > 0;
+                const isOPCO = c.typePaiement==='OPCO'||c.typePaiement==='Virement + OPCO';
                 return (
                   <tr key={c.id} onClick={()=>openContract(c)} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors">
                     <td className="px-4 py-3 font-medium text-gray-800">{c.client}</td>
-                    <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate">{c.prestation}</td>
+                    <td className="px-4 py-3 text-gray-600 max-w-[180px] truncate">{c.prestation}</td>
                     <td className="px-4 py-3 font-semibold">{fmt(c.montant)}</td>
                     <td className="px-4 py-3"><StatusBadge status={c.assignedTo}/></td>
                     <td className="px-4 py-3"><StatusBadge status={c.statut}/></td>
                     <td className="px-4 py-3"><StatusBadge status={isSurpaye ? 'Surpayé' : ps}/></td>
-                    <td className="px-4 py-3"><ExpiryBadge dateFin={c.dateFin} statut={c.statut}/></td>
+                    <td className="px-4 py-3">
+                      {c.typePaiement && <StatusBadge status={c.typePaiement}/>}
+                      {isOPCO && c.statutOPCO && <span className="ml-1"><StatusBadge status={c.statutOPCO}/></span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{c.dateSignature ? formatDate(c.dateSignature) : '—'}</td>
                     <td className="px-4 py-3"><button className="text-blue-500 hover:text-blue-700 text-xs font-medium">Ouvrir →</button></td>
                   </tr>
                 );
@@ -1010,12 +1048,14 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
         <div className="md:hidden space-y-3">
           {filtered.map(c => {
             const ps = calcPaymentStatus(c.montant, c.payments);
+            const isOPCO = c.typePaiement==='OPCO'||c.typePaiement==='Virement + OPCO';
             return (
               <div key={c.id} onClick={()=>openContract(c)} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 cursor-pointer">
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <div className="font-semibold text-gray-800">{c.client}</div>
                     <div className="text-xs text-gray-500 mt-0.5">{c.prestation}</div>
+                    {c.dateSignature && <div className="text-xs text-gray-400 mt-0.5">Signé le {formatDate(c.dateSignature)}</div>}
                   </div>
                   <div className="text-base font-bold text-blue-700">{fmt(c.montant)}</div>
                 </div>
@@ -1023,6 +1063,8 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                   <StatusBadge status={c.assignedTo}/>
                   <StatusBadge status={c.statut}/>
                   <StatusBadge status={ps}/>
+                  {c.typePaiement && <StatusBadge status={c.typePaiement}/>}
+                  {isOPCO && c.statutOPCO && <StatusBadge status={c.statutOPCO}/>}
                   <ExpiryBadge dateFin={c.dateFin} statut={c.statut}/>
                 </div>
               </div>
@@ -2262,6 +2304,25 @@ function AnalyticsModule({data}) {
     return map;
   }, [entries, filterYear]);
 
+  // 8. CA par date de signature (filterYear) - basé sur contrat.montant + dateSignature
+  const caSignatureMonthly = React.useMemo(() => {
+    const monthly = Array(12).fill(0);
+    (data.contracts||[]).filter(c=>c.statut!=='Annulé'&&c.dateSignature&&+c.dateSignature.substring(0,4)===filterYear).forEach(c => {
+      monthly[+c.dateSignature.substring(5,7)-1] += Number(c.montant)||0;
+    });
+    return monthly;
+  }, [data.contracts, filterYear]);
+
+  // 9. CA par type de paiement (filterYear) - basé sur contrat.montant
+  const caByPaymentType = React.useMemo(() => {
+    const map = {};
+    (data.contracts||[]).filter(c=>c.statut!=='Annulé'&&c.dateSignature&&+c.dateSignature.substring(0,4)===filterYear).forEach(c => {
+      const t = c.typePaiement||'Virement';
+      map[t] = (map[t]||0) + (Number(c.montant)||0);
+    });
+    return map;
+  }, [data.contracts, filterYear]);
+
   // Build chart data objects
   const caMonthlyChartData = {
     labels: MONTH_SHORT,
@@ -2343,6 +2404,27 @@ function AnalyticsModule({data}) {
     }]
   };
 
+  const caSignatureChartData = {
+    labels: MONTH_SHORT,
+    datasets: [{
+      label: `CA signé ${filterYear}`,
+      data: caSignatureMonthly,
+      backgroundColor: '#8b5cf6aa',
+      borderColor: '#8b5cf6',
+      borderWidth: 1,
+    }]
+  };
+
+  const payTypeLabels = Object.keys(caByPaymentType).sort((a,b)=>caByPaymentType[b]-caByPaymentType[a]);
+  const caByPaymentTypeChartData = {
+    labels: payTypeLabels,
+    datasets: [{
+      data: payTypeLabels.map(k=>caByPaymentType[k]),
+      backgroundColor: CHART_COLORS.slice(0, payTypeLabels.length),
+      borderWidth: 1,
+    }]
+  };
+
   const noLegend = {plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw||0)}}}};
   const withLegendRight = {plugins:{legend:{display:true,position:'right',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw||0)}}}};
 
@@ -2417,6 +2499,19 @@ function AnalyticsModule({data}) {
         {/* 7. Encaissements par associé */}
         <ChartBlock title={`Encaissements par associé ${filterYear}`} icon="👥">
           <ChartCanvas type="bar" data={associeChartData} options={noLegend}/>
+        </ChartBlock>
+
+        {/* 8. CA par date de signature */}
+        <ChartBlock title={`CA par date de signature ${filterYear}`} icon="✍️">
+          <ChartCanvas type="bar" data={caSignatureChartData} options={noLegend}/>
+        </ChartBlock>
+
+        {/* 9. CA par type de paiement */}
+        <ChartBlock title={`CA par type de paiement ${filterYear}`} icon="💳">
+          {payTypeLabels.length === 0
+            ? <EmptyState message="Aucun contrat signé cette année" icon="💳"/>
+            : <ChartCanvas type="doughnut" data={caByPaymentTypeChartData} options={withLegendRight}/>
+          }
         </ChartBlock>
 
       </div>
