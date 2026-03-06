@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>EntrepreneurPRO V16</title>
+<title>EntrepreneurPRO V18</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -27,7 +27,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = "V16 – ERP, TRÉSORERIE & PILOTAGE ☁️";
+const APP_VERSION = "V18 – CRM+, Trésorerie, Filtres & UX ☁️";
 const SCHEMA_VERSION = 3;
 const LS_KEY = "entrepreneurpro_v14_data";
 
@@ -44,6 +44,7 @@ const CRM_STAGES = ['Contact', 'RDV 1', 'Devis', 'Négociation', 'Client'];
 const ACTION_TYPES = ['Note', 'RDV', 'Appel', 'Email', 'Livraison', 'Relance'];
 const TX_TYPES = ['Achat', 'Sortie', 'Apport', 'Entrée'];
 const ASSIGNEES = ['Micka', 'César'];
+const ASSIGNEES_AVEC_DEUX = ['Micka', 'César', 'Les deux'];
 const IMPUTEES = ['Micka', 'César', 'Commun'];
 const PAYMENT_AUTHORS = ['Micka', 'César', 'Client'];
 const PAYMENT_TYPES = ['Virement', 'OPCO', 'Virement + OPCO', 'CB / Stripe', 'Espèces', 'Autre'];
@@ -53,7 +54,7 @@ const URSSAF_RATE = 0.22;
 const QUOTE_STATUSES = ['Brouillon', 'Envoyé', 'Accepté', 'Refusé', 'Expiré'];
 const INVOICE_STATUSES = ['Non envoyée', 'Envoyée', 'Payée', 'En retard'];
 const PERIODS = [{id:'mois',label:'Ce mois'},{id:'mois_prec',label:'Mois préc.'},{id:'trimestre',label:'Trimestre'},{id:'annee',label:'Cette année'},{id:'tout',label:'Tout'}];
-const SOURCES = ['Réseau', 'LinkedIn', 'Referral', 'Cold Email', 'Site Web', 'Autre'];
+const SOURCES = ['Réseaux sociaux', 'Site web', 'Réseautage', 'Recommandation', 'Démarchage mail', 'Démarchage téléphone', 'Autre'];
 const EXPENSE_CATEGORIES = ['Transport', 'Repas', 'Logiciels', 'Matériel', 'Formation', 'Marketing', 'Autre'];
 
 const BADGE_COLORS = {
@@ -76,6 +77,7 @@ const BADGE_COLORS = {
   'Basse': 'bg-green-100 text-green-700',
   'Micka': 'bg-indigo-100 text-indigo-700',
   'César': 'bg-emerald-100 text-emerald-700',
+  'Les deux': 'bg-violet-100 text-violet-700',
   'Commun': 'bg-gray-100 text-gray-600',
   'En attente': 'bg-amber-100 text-amber-700',
   'Accepté': 'bg-green-100 text-green-700',
@@ -167,13 +169,17 @@ function inPeriode(dateStr, range) {
   return d >= range.start && d <= range.end;
 }
 
-// Extended period range builder (supports 'custom' mode)
+// Extended period range builder (supports 'custom' + 'yYYYY' year modes)
 function buildPeriodeRange(periodeId, dateDebut, dateFin) {
   if(periodeId === 'custom') {
     if(!dateDebut && !dateFin) return null;
     const start = dateDebut ? new Date(dateDebut+'T00:00:00') : new Date(0);
     const end = dateFin ? new Date(dateFin+'T23:59:59') : new Date(8640000000000000);
     return {start, end};
+  }
+  if(periodeId && periodeId.startsWith('y')) {
+    const y = parseInt(periodeId.slice(1), 10);
+    if(!isNaN(y)) return {start:new Date(y,0,1), end:new Date(y,11,31,23,59,59)};
   }
   return getPeriodeRange(periodeId);
 }
@@ -218,7 +224,17 @@ function buildLedgerEntries(data) {
   (data.contracts||[]).forEach(c => {
     if(c.statut==='Annulé') return;
     (c.payments||[]).forEach(p => {
-      entries.push({id:'pay_'+p.id, sourceId:p.id, type:'contract', date:p.date, label:`${c.client} – ${c.prestation}`, montant:Math.abs(Number(p.montant)||0), auteur:p.auteur||'', source:'Contrats', category:'', contractId:c.id, assignedTo:c.assignedTo, payNote:p.note||''});
+      // For "Les deux" contracts, use explicit payAssignedTo if set, else split 50/50
+      const lesDeux = c.assignedTo === 'Les deux';
+      const assignedTo = lesDeux ? (p.payAssignedTo || 'Micka') : c.assignedTo;
+      const montantAbs = Math.abs(Number(p.montant)||0);
+      if(lesDeux && !p.payAssignedTo) {
+        // No explicit assignment: split 50/50
+        entries.push({id:'pay_'+p.id+'_m', sourceId:p.id, type:'contract', date:p.date, label:`${c.client} – ${c.prestation}`, montant:montantAbs/2, auteur:'Client', source:'Contrats', category:'', contractId:c.id, assignedTo:'Micka', payNote:p.note||''});
+        entries.push({id:'pay_'+p.id+'_c', sourceId:p.id, type:'contract', date:p.date, label:`${c.client} – ${c.prestation}`, montant:montantAbs/2, auteur:'Client', source:'Contrats', category:'', contractId:c.id, assignedTo:'César', payNote:p.note||''});
+      } else {
+        entries.push({id:'pay_'+p.id, sourceId:p.id, type:'contract', date:p.date, label:`${c.client} – ${c.prestation}`, montant:montantAbs, auteur:'Client', source:'Contrats', category:'', contractId:c.id, assignedTo:assignedTo, payNote:p.note||''});
+      }
     });
   });
   return entries.sort((a,b)=>new Date(b.date)-new Date(a.date));
@@ -234,9 +250,9 @@ const INITIAL_DATA = {
     {id:"c002",clientId:"cl002",client:"StartupXYZ",prestation:"Conseil Stratégie",montant:3000,assignedTo:"César",statut:"En cours",dateDebut:"2025-02-01",dateFin:"2025-04-15",notes:"",payments:[{id:"p001",date:"2025-02-15",montant:1500,note:"Acompte 50%",auteur:"Client"}],actions:[]}
   ],
   clients: [
-    {id:"cl001",entreprise:"TechCorp",nom:"Jean Dupont",email:"jean@techcorp.fr",telephone:"+33 6 12 34 56 78",source:"Réseau",etape:"Client",potentiel:10000,notes:"Client fidèle",dateEntree:"2025-01-10"},
-    {id:"cl002",entreprise:"StartupXYZ",nom:"Marie Martin",email:"marie@startupxyz.com",telephone:"",source:"LinkedIn",etape:"Négociation",potentiel:8000,notes:"",dateEntree:"2025-02-01"},
-    {id:"cl003",entreprise:"BioMed Paris",nom:"Paul Blanc",email:"paul@biomed.fr",telephone:"+33 1 42 00 11 22",source:"Referral",etape:"Devis",potentiel:15000,notes:"Grosse opportunité",dateEntree:"2025-02-15"}
+    {id:"cl001",entreprise:"TechCorp",nom:"Dupont",prenom:"Jean",email:"jean@techcorp.fr",telephone:"+33 6 12 34 56 78",source:"Réseaux sociaux",etape:"Client",potentiel:10000,notes:"Client fidèle",dateEntree:"2025-01-10",adresse:"",siret:""},
+    {id:"cl002",entreprise:"StartupXYZ",nom:"Martin",prenom:"Marie",email:"marie@startupxyz.com",telephone:"",source:"Réseautage",etape:"Négociation",potentiel:8000,notes:"",dateEntree:"2025-02-01",adresse:"",siret:""},
+    {id:"cl003",entreprise:"BioMed Paris",nom:"Blanc",prenom:"Paul",email:"paul@biomed.fr",telephone:"+33 1 42 00 11 22",source:"Recommandation",etape:"Devis",potentiel:15000,notes:"Grosse opportunité",dateEntree:"2025-02-15",adresse:"",siret:""}
   ],
   tasks: [
     {id:"t001",titre:"Préparer devis TechCorp v2",client:"TechCorp",assignedTo:"Micka",statut:"À faire",priorite:"Haute",echeance:"2025-03-10",notes:""},
@@ -640,16 +656,41 @@ function AlertCenter({alerts, onNavigate, onClose}) {
 // ============================================================
 // PERIODE FILTER COMPONENT
 // ============================================================
+const YEARS_RANGE = (() => {
+  const now = new Date().getFullYear();
+  return [now-1, now, now+1, now+2].map(y => ({id:`y${y}`, label:String(y)}));
+})();
+
 function PeriodeFilter({periodeId, setPeriodeId, dateDebut, setDateDebut, dateFin, setDateFin}) {
+  const [showYears, setShowYears] = React.useState(false);
+  const isYear = periodeId && periodeId.startsWith('y');
+  const yearLabel = isYear ? periodeId.slice(1) : null;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex gap-1 flex-wrap">
-        {PERIOD_SHORTCUTS.map(s => (
-          <button key={s.id} onClick={() => setPeriodeId(s.id)}
+        {PERIOD_SHORTCUTS.filter(s=>s.id!=='annee').map(s => (
+          <button key={s.id} onClick={() => { setPeriodeId(s.id); setShowYears(false); }}
             className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${periodeId===s.id?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
             {s.label}
           </button>
         ))}
+        {/* Year selector */}
+        <div className="relative">
+          <button onClick={()=>setShowYears(v=>!v)}
+            className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${isYear?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            {isYear ? yearLabel : 'Année ▾'}
+          </button>
+          {showYears && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 p-1 min-w-[80px]">
+              {YEARS_RANGE.map(y => (
+                <button key={y.id} onClick={()=>{setPeriodeId(y.id);setShowYears(false);}}
+                  className={`block w-full text-left px-3 py-1.5 text-xs rounded-lg hover:bg-blue-50 ${periodeId===y.id?'text-blue-700 font-semibold':'text-gray-700'}`}>
+                  {y.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       {periodeId==='custom' && (
         <div className="flex items-center gap-2 flex-wrap">
@@ -746,10 +787,11 @@ function Dashboard({data, onNavigate}) {
     const cesarApports = filteredEntries.filter(e=>e.type==='apport'&&e.imputéÀ==='César').reduce((s,e)=>s+e.montant,0);
     const mickaAdv = filteredEntries.filter(e=>e.type==='expense'&&e.auteur==='Micka').reduce((s,e)=>s+Math.abs(e.montant),0);
     const cesarAdv = filteredEntries.filter(e=>e.type==='expense'&&e.auteur==='César').reduce((s,e)=>s+Math.abs(e.montant),0);
-    const mickaBank = filteredEntries.filter(e=>e.type==='bank'&&e.imputéÀ==='Micka').reduce((s,e)=>s+Math.abs(e.montant),0);
-    const cesarBank = filteredEntries.filter(e=>e.type==='bank'&&e.imputéÀ==='César').reduce((s,e)=>s+Math.abs(e.montant),0);
-    const netMicka = mickaPay + mickaApports - mickaAdv - mickaBank;
-    const netCesar = cesarPay + cesarApports - cesarAdv - cesarBank;
+    // Bank: signed montant (negative=Achat/Sortie, positive=Entrée). Exclude Commun via imputéÀ filter.
+    const mickaBank = filteredEntries.filter(e=>e.type==='bank'&&e.imputéÀ==='Micka').reduce((s,e)=>s+e.montant,0);
+    const cesarBank = filteredEntries.filter(e=>e.type==='bank'&&e.imputéÀ==='César').reduce((s,e)=>s+e.montant,0);
+    const netMicka = mickaPay + mickaApports - mickaAdv + mickaBank;
+    const netCesar = cesarPay + cesarApports - cesarAdv + cesarBank;
     const ecart = Math.abs(netMicka - netCesar);
     const recommended = ecart > 50 ? (netMicka > netCesar ? 'César' : 'Micka') : null;
 
@@ -892,34 +934,62 @@ function Dashboard({data, onNavigate}) {
         <DraggableWidget key={id} {...wProps(id)}>
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
             <h2 className="text-base font-semibold text-gray-800 mb-4">💳 Trésorerie Duo</h2>
+            {/* Legend */}
+            <div className="flex gap-4 mb-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-indigo-500 inline-block"/><span className="text-indigo-700 font-medium">Réel</span></span>
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block"/><span className="text-amber-700 font-medium">À encaisser</span></span>
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-emerald-400 inline-block"/><span className="text-emerald-700 font-medium">Projeté</span></span>
+            </div>
             {[{name:'Micka', net:stats.netMicka, proj:stats.netMickaProj, reste:stats.resteMicka, color:'indigo'}, {name:'César', net:stats.netCesar, proj:stats.netCesarProj, reste:stats.resteCesar, color:'emerald'}].map(({name, net, proj, reste, color}) => {
               const maxVal = Math.max(Math.abs(stats.netMicka), Math.abs(stats.netCesar), Math.abs(stats.netMickaProj), Math.abs(stats.netCesarProj), 1);
               const wReal = Math.min(100, Math.round(Math.abs(net)/maxVal*100));
+              const wEnc = Math.min(100, Math.round(reste/maxVal*100));
               const wProj = Math.min(100, Math.round(Math.abs(proj)/maxVal*100));
               return (
-                <div key={name} className="mb-4 last:mb-0">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className={`text-sm font-medium text-${color}-700`}>{name}</span>
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className={`font-semibold ${net>=0?`text-${color}-700`:'text-red-500'}`}>Réel: {fmt(net)}</span>
-                      <span className="text-gray-400">|</span>
-                      <span className="font-semibold text-emerald-600">Projeté: {fmt(proj)}</span>
+                <div key={name} className={`mb-5 last:mb-0 p-3 rounded-xl border ${color==='indigo'?'border-indigo-100 bg-indigo-50/30':'border-emerald-100 bg-emerald-50/30'}`}>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className={`text-sm font-bold text-${color}-700`}>{name}</span>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${net>=0?`bg-${color}-100 text-${color}-700`:'bg-red-100 text-red-700'}`}>{net>=0?'+':''}{fmt(net)}</span>
+                  </div>
+                  {/* Réel bar */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-indigo-600 w-24 shrink-0 font-medium">Réel</span>
+                      <div className="flex-1 bg-gray-100 rounded-full h-2.5">
+                        <div className="h-2.5 rounded-full bg-indigo-500 transition-all" style={{width:`${wReal}%`}}/>
+                      </div>
+                      <span className="text-xs font-semibold text-indigo-700 w-20 text-right">{fmt(net)}</span>
+                    </div>
+                    {reste > 0 && <div className="flex items-center gap-2">
+                      <span className="text-xs text-amber-600 w-24 shrink-0 font-medium">À encaisser</span>
+                      <div className="flex-1 bg-gray-100 rounded-full h-2">
+                        <div className="h-2 rounded-full bg-amber-400 transition-all" style={{width:`${wEnc}%`}}/>
+                      </div>
+                      <span className="text-xs font-semibold text-amber-600 w-20 text-right">+{fmt(reste)}</span>
+                    </div>}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-emerald-600 w-24 shrink-0 font-medium">Projeté</span>
+                      <div className="flex-1 bg-gray-100 rounded-full h-2">
+                        <div className="h-2 rounded-full bg-emerald-400 transition-all" style={{width:`${wProj}%`}}/>
+                      </div>
+                      <span className="text-xs font-semibold text-emerald-700 w-20 text-right">{fmt(proj)}</span>
                     </div>
                   </div>
-                  <div className="relative w-full bg-gray-100 rounded-full h-2 mb-0.5">
-                    <div className={`h-2 rounded-full transition-all bg-${color}-500`} style={{width:`${wReal}%`}}/>
-                  </div>
-                  <div className="relative w-full bg-gray-100 rounded-full h-1.5 opacity-60">
-                    <div className={`h-1.5 rounded-full transition-all bg-emerald-400`} style={{width:`${wProj}%`}}/>
-                  </div>
-                  {reste > 0 && <div className="text-xs text-gray-400 mt-0.5">+{fmt(reste)} à encaisser</div>}
                 </div>
               );
             })}
-            <div className="flex items-center justify-between pt-3 border-t border-gray-100 mt-2">
-              <span className="text-xs text-gray-500">Écart réel: {fmt(stats.ecart)}</span>
-              {stats.recommended && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-full font-medium">Prochain virement → {stats.recommended}</span>}
+            {/* Synthèse */}
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-100 mt-2">
+              <div className="text-center">
+                <div className="text-xs text-gray-400 mb-0.5">Écart réel</div>
+                <div className="text-sm font-bold text-gray-700">{fmt(stats.ecart)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-gray-400 mb-0.5">Écart projeté</div>
+                <div className="text-sm font-bold text-gray-700">{fmt(Math.abs(stats.netMickaProj - stats.netCesarProj))}</div>
+              </div>
             </div>
+            {stats.recommended && <div className="mt-2 text-xs bg-amber-50 text-amber-700 px-3 py-2 rounded-lg font-medium text-center">Prochain virement conseillé → {stats.recommended}</div>}
           </div>
         </DraggableWidget>
       );
@@ -1468,9 +1538,9 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
       if(contract) {
         setForm({...contract, payments:[...(contract.payments||[])], actions:[...(contract.actions||[])]});
       } else {
-        setForm({id:null, clientId:'', client:'', prestation:'', montant:'', assignedTo:'Micka', statut:'En cours', dateSignature:todayStr(), dateDebut:todayStr(), dateFin:'', typePaiement:'Virement', montantOPCO:'', statutOPCO:'En attente', notes:'', payments:[], actions:[]});
+        setForm({id:null, clientId:contract?.clientId||'', client:contract?.client||'', prestation:'', montant:contract?.montant||'', assignedTo:'Micka', statut:'En cours', dateSignature:todayStr(), dateDebut:todayStr(), dateFin:'', typePaiement:'Virement', montantOPCO:'', statutOPCO:'En attente', notes:'', payments:[], actions:[]});
       }
-      setPayForm({date:todayStr(),montant:'',auteur:'Client',note:''});
+      setPayForm({date:todayStr(),montant:'',auteur:'Client',note:'',payAssignedTo:'Micka'});
       setActForm({date:todayStr(),type:'Note',titre:'',auteur:'Micka',notes:''});
     }
   }, [open, contract, defaultTab]);
@@ -1504,10 +1574,10 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
 
   const addPayment = () => {
     if(!payForm.montant || isNaN(Number(payForm.montant))) { addToast('Montant invalide','error'); return; }
-    const p = {...payForm, id:genId(), montant:Number(payForm.montant)};
+    const p = {...payForm, id:genId(), montant:Number(payForm.montant), auteur:'Client'};
     setForm(f => ({...f, payments:[...(f.payments||[]), p]}));
     setShowAddPayment(false);
-    setPayForm({date:todayStr(),montant:'',auteur:'Client',note:''});
+    setPayForm({date:todayStr(),montant:'',auteur:'Client',note:'',payAssignedTo:'Micka'});
     addToast('Paiement ajouté','success');
   };
 
@@ -1564,7 +1634,7 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Attribué à</label>
               <select className={selectCls} value={form.assignedTo||'Micka'} onChange={e=>setF('assignedTo',e.target.value)}>
-                {ASSIGNEES.map(a=><option key={a}>{a}</option>)}
+                {ASSIGNEES_AVEC_DEUX.map(a=><option key={a}>{a}</option>)}
               </select>
             </div>
             <div>
@@ -1642,7 +1712,9 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">Date</label><input className={inputCls} type="date" value={payForm.date} onChange={e=>setPayForm(f=>({...f,date:e.target.value}))}/></div>
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">Montant (€) *</label><input className={inputCls} type="number" step="0.01" value={payForm.montant} onChange={e=>setPayForm(f=>({...f,montant:e.target.value}))} placeholder="0"/></div>
-                <div><label className="block text-xs font-medium text-gray-600 mb-1">Auteur</label><select className={selectCls} value={payForm.auteur} onChange={e=>setPayForm(f=>({...f,auteur:e.target.value}))}>{PAYMENT_AUTHORS.map(a=><option key={a}>{a}</option>)}</select></div>
+                {form.assignedTo==='Les deux' && (
+                  <div><label className="block text-xs font-medium text-gray-600 mb-1">Reçu par</label><select className={selectCls} value={payForm.payAssignedTo||'Micka'} onChange={e=>setPayForm(f=>({...f,payAssignedTo:e.target.value}))}>{ASSIGNEES.map(a=><option key={a}>{a}</option>)}</select></div>
+                )}
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">Note</label><input className={inputCls} value={payForm.note} onChange={e=>setPayForm(f=>({...f,note:e.target.value}))} placeholder="Acompte, solde..."/></div>
               </div>
               <div className="flex gap-2">
@@ -1726,6 +1798,9 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
   const addToast = useToast();
   const [statusFilter, setStatusFilter] = React.useState('Tous');
   const [search, setSearch] = React.useState('');
+  const [periodeId, setPeriodeId] = React.useState('tout');
+  const [dateDebut, setDateDebut] = React.useState('');
+  const [dateFin, setDateFin] = React.useState('');
   const [selectedContract, setSelectedContract] = React.useState(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [modalTab, setModalTab] = React.useState('infos');
@@ -1738,7 +1813,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
         const c = data.contracts.find(x => x.id===deepLink.id);
         if(c) { setSelectedContract(c); setModalTab(deepLink.tab||'infos'); setModalOpen(true); }
       } else if(deepLink.clientId || deepLink.client) {
-        setSelectedContract({clientId:deepLink.clientId||'', client:deepLink.client||''});
+        setSelectedContract({clientId:deepLink.clientId||'', client:deepLink.client||'', montant:deepLink.montant||''});
         setModalTab('infos');
         setModalOpen(true);
       }
@@ -1761,9 +1836,12 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
     addToast('Export CSV téléchargé','success');
   };
 
+  const periodeRange = React.useMemo(() => buildPeriodeRange(periodeId, dateDebut, dateFin), [periodeId, dateDebut, dateFin]);
+
   const filtered = React.useMemo(() => {
     return data.contracts.filter(c => {
       if(statusFilter !== 'Tous' && c.statut !== statusFilter) return false;
+      if(periodeId !== 'tout' && !inPeriode(c.dateSignature||c.dateDebut||'', periodeRange)) return false;
       if(search) {
         const q = normalize(search);
         if(!normalize(c.client).includes(q) && !normalize(c.prestation).includes(q)) return false;
@@ -1823,16 +1901,22 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="flex gap-1 flex-wrap">
-          {['Tous', ...CONTRACT_STATUSES].map(s => (
-            <button key={s} onClick={()=>setStatusFilter(s)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-              {s}
-            </button>
-          ))}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500">Période :</span>
+          <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
         </div>
-        <input className={`${inputCls} max-w-xs`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher client, prestation..."/>
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="flex gap-1 flex-wrap">
+            {['Tous', ...CONTRACT_STATUSES].map(s => (
+              <button key={s} onClick={()=>setStatusFilter(s)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                {s}
+              </button>
+            ))}
+          </div>
+          <input className={`${inputCls} max-w-xs`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher client, prestation..."/>
+        </div>
       </div>
 
       {/* Totals */}
@@ -1928,7 +2012,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
 // ============================================================
 // CRM MODULE
 // ============================================================
-function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavigate}) {
+function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavigate, onTransformToContract}) {
   const [tab, setTab] = React.useState('infos');
   const [editing, setEditing] = React.useState(false);
   const [form, setForm] = React.useState({});
@@ -1976,30 +2060,53 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
             <>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div><span className="text-gray-500">Entreprise:</span> <span className="font-medium">{form.entreprise}</span></div>
-                <div><span className="text-gray-500">Contact:</span> <span className="font-medium">{form.nom}</span></div>
-                <div><span className="text-gray-500">Email:</span> <span className="font-medium">{form.email||'—'}</span></div>
+                <div><span className="text-gray-500">Contact:</span> <span className="font-medium">{form.prenom ? `${form.prenom} ${form.nom}` : form.nom}</span></div>
+                <div><span className="text-gray-500">Email:</span> {form.email ? <a href={`mailto:${form.email}`} className="text-blue-600 hover:underline font-medium">{form.email}</a> : <span className="text-gray-400">—</span>}</div>
                 <div><span className="text-gray-500">Tél:</span> <span className="font-medium">{form.telephone||'—'}</span></div>
                 <div><span className="text-gray-500">Source:</span> <StatusBadge status={form.source}/></div>
-                <div><span className="text-gray-500">Étape:</span> <StatusBadge status={form.etape}/></div>
+                <div className="flex items-center gap-2"><span className="text-gray-500">Étape:</span>
+                  <select className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white" value={form.etape||'Contact'} onChange={e=>{const updated={...form,etape:e.target.value};setForm(updated);onSave({...updated,potentiel:Number(updated.potentiel)||0});}}>
+                    {CRM_STAGES.map(s=><option key={s}>{s}</option>)}
+                  </select>
+                </div>
                 <div><span className="text-gray-500">Potentiel:</span> <span className="font-semibold text-blue-700">{fmt(form.potentiel)}</span></div>
                 <div><span className="text-gray-500">CA généré:</span> <span className="font-semibold text-green-700">{fmt(caGenere)}</span></div>
+                {form.adresse && <div className="col-span-2"><span className="text-gray-500">Adresse:</span> <span className="font-medium">{form.adresse}</span></div>}
+                {form.siret && <div><span className="text-gray-500">SIRET:</span> <span className="font-medium font-mono text-sm">{form.siret}</span></div>}
+                {form.recommandePar && <div><span className="text-gray-500">Recommandé par:</span> <span className="font-medium">{form.recommandePar}</span></div>}
               </div>
               {form.notes && <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">{form.notes}</div>}
-              <div className="flex justify-between pt-2">
+              <div className="flex justify-between pt-2 flex-wrap gap-2">
                 <Btn variant="danger" size="sm" onClick={()=>setConfirmDelete(true)}>Supprimer</Btn>
-                <Btn variant="outline" size="sm" onClick={()=>setEditing(true)}>Modifier</Btn>
+                <div className="flex gap-2">
+                  {(form.etape !== 'Client' && (form.potentiel||0) > 0) && (
+                    <Btn variant="outline" size="sm" onClick={()=>{onTransformToContract && onTransformToContract(form);onClose();}}>🚀 Transformer en contrat</Btn>
+                  )}
+                  <Btn variant="outline" size="sm" onClick={()=>setEditing(true)}>Modifier</Btn>
+                </div>
               </div>
             </>
           ) : (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">Entreprise</label><input className={inputCls} value={form.entreprise||''} onChange={e=>setForm(f=>({...f,entreprise:e.target.value}))}/></div>
-                <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom contact</label><input className={inputCls} value={form.nom||''} onChange={e=>setForm(f=>({...f,nom:e.target.value}))}/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom</label><input className={inputCls} value={form.nom||''} onChange={e=>setForm(f=>({...f,nom:e.target.value}))}/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Prénom</label><input className={inputCls} value={form.prenom||''} onChange={e=>setForm(f=>({...f,prenom:e.target.value}))}/></div>
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">Email</label><input className={inputCls} type="email" value={form.email||''} onChange={e=>setForm(f=>({...f,email:e.target.value}))}/></div>
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">Téléphone</label><input className={inputCls} value={form.telephone||''} onChange={e=>setForm(f=>({...f,telephone:e.target.value}))}/></div>
-                <div><label className="block text-xs font-medium text-gray-600 mb-1">Source</label><select className={selectCls} value={form.source||'Autre'} onChange={e=>setForm(f=>({...f,source:e.target.value}))}>{SOURCES.map(s=><option key={s}>{s}</option>)}</select></div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Source</label>
+                  <select className={selectCls} value={form.source||'Autre'} onChange={e=>setForm(f=>({...f,source:e.target.value}))}>
+                    {SOURCES.map(s=><option key={s}>{s}</option>)}
+                  </select>
+                </div>
+                {form.source==='Recommandation' && (
+                  <div><label className="block text-xs font-medium text-gray-600 mb-1">Recommandé par</label><input className={inputCls} value={form.recommandePar||''} onChange={e=>setForm(f=>({...f,recommandePar:e.target.value}))}/></div>
+                )}
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">Étape</label><select className={selectCls} value={form.etape||'Contact'} onChange={e=>setForm(f=>({...f,etape:e.target.value}))}>{CRM_STAGES.map(s=><option key={s}>{s}</option>)}</select></div>
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">Potentiel (€)</label><input className={inputCls} type="number" value={form.potentiel||''} onChange={e=>setForm(f=>({...f,potentiel:e.target.value}))}/></div>
+                <div className="col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Adresse</label><input className={inputCls} value={form.adresse||''} onChange={e=>setForm(f=>({...f,adresse:e.target.value}))} placeholder="Adresse physique (optionnel)"/></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">SIRET</label><input className={inputCls} value={form.siret||''} onChange={e=>setForm(f=>({...f,siret:e.target.value}))} placeholder="N° SIRET (optionnel)"/></div>
               </div>
               <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label><textarea className={textareaCls} rows={3} value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
               <div className="flex gap-2 justify-end">
@@ -2016,17 +2123,18 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
             linkedContracts.map(c => {
               const ps = calcPaymentStatus(c.montant, c.payments);
               return (
-                <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <div key={c.id} onClick={()=>{onClose();onNavigate('contracts',{id:c.id,tab:'infos'});}}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100 cursor-pointer hover:bg-gray-100 transition-colors">
                   <div>
                     <div className="text-sm font-medium text-gray-800">{c.prestation}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">{fmt(c.montant)}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{fmt(c.montant)} · {c.dateSignature ? formatDate(c.dateSignature) : '—'}</div>
                   </div>
-                  <div className="flex gap-1.5"><StatusBadge status={c.statut}/><StatusBadge status={ps}/></div>
+                  <div className="flex gap-1.5 items-center"><StatusBadge status={c.statut}/><StatusBadge status={ps}/><span className="text-blue-400 text-xs ml-1">→</span></div>
                 </div>
               );
             })
           )}
-          <Btn size="sm" variant="outline" onClick={()=>{onClose();onNavigate('contracts',{clientId:client.id,client:client.entreprise});}}>
+          <Btn size="sm" variant="outline" onClick={()=>{onClose();onNavigate('contracts',{clientId:client.id,client:client.entreprise,montant:client.potentiel});}}>
             + Créer un contrat
           </Btn>
         </div>
@@ -2058,12 +2166,13 @@ function CRMModule({data, setData, onNavigate}) {
   const [selectedClient, setSelectedClient] = React.useState(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [newClientModal, setNewClientModal] = React.useState(false);
-  const [newForm, setNewForm] = React.useState({entreprise:'',nom:'',email:'',telephone:'',source:'Autre',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr()});
+  const [newForm, setNewForm] = React.useState({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'Autre',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:''});
 
   const filtered = React.useMemo(() => {
-    if(!search) return data.clients;
+    let list = [...(data.clients||[])].sort((a,b)=>new Date(b.dateEntree||0)-new Date(a.dateEntree||0));
+    if(!search) return list;
     const q = normalize(search);
-    return data.clients.filter(c => normalize(c.entreprise).includes(q)||normalize(c.nom).includes(q));
+    return list.filter(c => normalize(c.entreprise).includes(q)||normalize(c.nom).includes(q)||normalize(c.prenom||'').includes(q)||normalize(c.email||'').includes(q));
   }, [data.clients, search]);
 
   const getCA = (cl) => {
@@ -2084,9 +2193,9 @@ function CRMModule({data, setData, onNavigate}) {
   const handleCreate = () => {
     if(!newForm.entreprise.trim()||!newForm.nom.trim()) { addToast('Entreprise et nom requis','error'); return; }
     const nc = {...newForm, id:genId(), potentiel:Number(newForm.potentiel)||0, dateEntree:newForm.dateEntree||todayStr()};
-    setData(d => ({...d, clients:[...d.clients, nc]}));
+    setData(d => ({...d, clients:[...(d.clients||[]), nc]}));
     setNewClientModal(false);
-    setNewForm({entreprise:'',nom:'',email:'',telephone:'',source:'Autre',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr()});
+    setNewForm({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'Autre',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:''});
     addToast('Client créé','success');
   };
 
@@ -2112,21 +2221,22 @@ function CRMModule({data, setData, onNavigate}) {
           <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>{['Entreprise','Nom','Source','Étape','Potentiel','CA généré','Entrée',''].map(h=>(
+                <tr>{['Entreprise','Contact','Email','Source','Étape','Potentiel','CA généré','Entrée',''].map(h=>(
                   <th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3">{h}</th>
                 ))}</tr>
               </thead>
               <tbody>
                 {filtered.map(cl => (
-                  <tr key={cl.id} onClick={()=>openClient(cl)} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors">
-                    <td className="px-4 py-3 font-medium text-gray-800">{cl.entreprise}</td>
-                    <td className="px-4 py-3 text-gray-600">{cl.nom}</td>
-                    <td className="px-4 py-3"><StatusBadge status={cl.source}/></td>
-                    <td className="px-4 py-3"><StatusBadge status={cl.etape}/></td>
-                    <td className="px-4 py-3 font-semibold">{fmt(cl.potentiel)}</td>
-                    <td className="px-4 py-3 text-green-700 font-semibold">{fmt(getCA(cl))}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(cl.dateEntree)}</td>
-                    <td className="px-4 py-3"><button className="text-blue-500 hover:text-blue-700 text-xs">Voir →</button></td>
+                  <tr key={cl.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-800 cursor-pointer" onClick={()=>openClient(cl)}>{cl.entreprise}</td>
+                    <td className="px-4 py-3 text-gray-600 cursor-pointer" onClick={()=>openClient(cl)}>{cl.prenom ? `${cl.prenom} ${cl.nom}` : cl.nom}</td>
+                    <td className="px-4 py-3">{cl.email ? <a href={`mailto:${cl.email}`} onClick={e=>e.stopPropagation()} className="text-blue-600 hover:text-blue-800 text-xs underline truncate max-w-[140px] block" title={cl.email}>{cl.email}</a> : <span className="text-gray-300 text-xs">—</span>}</td>
+                    <td className="px-4 py-3 cursor-pointer" onClick={()=>openClient(cl)}><StatusBadge status={cl.source}/></td>
+                    <td className="px-4 py-3 cursor-pointer" onClick={()=>openClient(cl)}><StatusBadge status={cl.etape}/></td>
+                    <td className="px-4 py-3 font-semibold cursor-pointer" onClick={()=>openClient(cl)}>{fmt(cl.potentiel)}</td>
+                    <td className="px-4 py-3 text-green-700 font-semibold cursor-pointer" onClick={()=>openClient(cl)}>{fmt(getCA(cl))}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs cursor-pointer" onClick={()=>openClient(cl)}>{formatDate(cl.dateEntree)}</td>
+                    <td className="px-4 py-3"><button onClick={()=>openClient(cl)} className="text-blue-500 hover:text-blue-700 text-xs">Voir →</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -2153,21 +2263,30 @@ function CRMModule({data, setData, onNavigate}) {
       </>)}
 
       {view==='pipeline' && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {pipelineStages.map(stage => {
-            const stageClients = data.clients.filter(c=>c.etape===stage);
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {CRM_STAGES.map(stage => {
+            const stageClients = (data.clients||[]).filter(c=>c.etape===stage);
             return (
-              <div key={stage} className="bg-gray-50 rounded-2xl p-3">
+              <div key={stage} className="bg-gray-50 rounded-2xl p-3 min-h-[120px]"
+                onDragOver={e=>{e.preventDefault();}}
+                onDrop={e=>{e.preventDefault();const cid=e.dataTransfer.getData('clientId');if(cid){setData(d=>({...d,clients:d.clients.map(c=>c.id===cid?{...c,etape:stage}:c)}));addToast(`Déplacé vers ${stage}`,'success');}}}>
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-semibold text-gray-600">{stage}</span>
                   <span className="text-xs bg-white px-1.5 py-0.5 rounded-full text-gray-500 shadow-sm">{stageClients.length}</span>
                 </div>
                 <div className="space-y-2">
                   {stageClients.map(cl => (
-                    <div key={cl.id} onClick={()=>openClient(cl)} className="bg-white rounded-xl p-3 shadow-sm cursor-pointer hover:shadow-md transition-shadow border border-gray-100">
+                    <div key={cl.id}
+                      draggable
+                      onDragStart={e=>{e.dataTransfer.setData('clientId',cl.id);}}
+                      className="bg-white rounded-xl p-3 shadow-sm cursor-grab hover:shadow-md transition-shadow border border-gray-100">
                       <div className="text-sm font-semibold text-gray-800 truncate">{cl.entreprise}</div>
-                      <div className="text-xs text-gray-500 truncate mt-0.5">{cl.nom}</div>
+                      <div className="text-xs text-gray-500 truncate mt-0.5">{cl.prenom ? `${cl.prenom} ${cl.nom}` : cl.nom}</div>
                       <div className="text-xs font-semibold text-blue-700 mt-1">{fmt(cl.potentiel)}</div>
+                      <div className="flex gap-1 mt-2">
+                        <button onClick={()=>openClient(cl)} className="text-xs text-blue-500 hover:text-blue-700">Voir</button>
+                        {cl.etape !== 'Client' && <button onClick={()=>{onNavigate('contracts',{clientId:cl.id,client:cl.entreprise,montant:cl.potentiel});}} className="text-xs text-green-600 hover:text-green-800 ml-1">→ Contrat</button>}
+                      </div>
                     </div>
                   ))}
                   {stageClients.length===0 && <div className="text-center text-xs text-gray-300 py-4">Vide</div>}
@@ -2186,6 +2305,13 @@ function CRMModule({data, setData, onNavigate}) {
         onSave={handleSave}
         onDelete={handleDelete}
         onNavigate={onNavigate}
+        onTransformToContract={(cl) => {
+          // Transform prospect → contract: navigate to contracts with prefilled data, clear potentiel
+          onNavigate('contracts', {clientId:cl.id, client:cl.entreprise, montant:cl.potentiel});
+          // Move to "Client" stage and clear potentiel
+          setData(d => ({...d, clients:d.clients.map(c=>c.id===cl.id?{...c,etape:'Client',potentiel:0}:c)}));
+          addToast('Prospect transformé en contrat','success');
+        }}
       />
 
       {/* New Client Modal */}
@@ -2193,13 +2319,24 @@ function CRMModule({data, setData, onNavigate}) {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Entreprise *</label><input className={inputCls} value={newForm.entreprise} onChange={e=>setNewForm(f=>({...f,entreprise:e.target.value}))}/></div>
-            <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom contact *</label><input className={inputCls} value={newForm.nom} onChange={e=>setNewForm(f=>({...f,nom:e.target.value}))}/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom *</label><input className={inputCls} value={newForm.nom} onChange={e=>setNewForm(f=>({...f,nom:e.target.value}))}/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">Prénom</label><input className={inputCls} value={newForm.prenom||''} onChange={e=>setNewForm(f=>({...f,prenom:e.target.value}))}/></div>
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Email</label><input className={inputCls} type="email" value={newForm.email} onChange={e=>setNewForm(f=>({...f,email:e.target.value}))}/></div>
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Téléphone</label><input className={inputCls} value={newForm.telephone} onChange={e=>setNewForm(f=>({...f,telephone:e.target.value}))}/></div>
-            <div><label className="block text-xs font-medium text-gray-600 mb-1">Source</label><select className={selectCls} value={newForm.source} onChange={e=>setNewForm(f=>({...f,source:e.target.value}))}>{SOURCES.map(s=><option key={s}>{s}</option>)}</select></div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Source</label>
+              <select className={selectCls} value={newForm.source} onChange={e=>setNewForm(f=>({...f,source:e.target.value,recommandePar:e.target.value!=='Recommandation'?'':f.recommandePar}))}>
+                {SOURCES.map(s=><option key={s}>{s}</option>)}
+              </select>
+            </div>
+            {newForm.source==='Recommandation' && (
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Recommandé par</label><input className={inputCls} value={newForm.recommandePar||''} onChange={e=>setNewForm(f=>({...f,recommandePar:e.target.value}))} placeholder="Nom du recommandant"/></div>
+            )}
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Étape</label><select className={selectCls} value={newForm.etape} onChange={e=>setNewForm(f=>({...f,etape:e.target.value}))}>{CRM_STAGES.map(s=><option key={s}>{s}</option>)}</select></div>
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Potentiel (€)</label><input className={inputCls} type="number" value={newForm.potentiel} onChange={e=>setNewForm(f=>({...f,potentiel:e.target.value}))}/></div>
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Date entrée</label><input className={inputCls} type="date" value={newForm.dateEntree} onChange={e=>setNewForm(f=>({...f,dateEntree:e.target.value}))}/></div>
+            <div className="col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Adresse</label><input className={inputCls} value={newForm.adresse||''} onChange={e=>setNewForm(f=>({...f,adresse:e.target.value}))} placeholder="Adresse physique (optionnel)"/></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">SIRET</label><input className={inputCls} value={newForm.siret||''} onChange={e=>setNewForm(f=>({...f,siret:e.target.value}))} placeholder="N° SIRET (optionnel)"/></div>
           </div>
           <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label><textarea className={textareaCls} rows={3} value={newForm.notes} onChange={e=>setNewForm(f=>({...f,notes:e.target.value}))}/></div>
           <div className="flex gap-2 justify-end">
@@ -2516,6 +2653,11 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
   const [selectedExpense, setSelectedExpense] = React.useState(null);
   const [selectedTx, setSelectedTx] = React.useState(null);
   const [selectedSub, setSelectedSub] = React.useState(null);
+  const [periodeId, setPeriodeId] = React.useState('tout');
+  const [dateDebut, setDateDebut] = React.useState('');
+  const [dateFin, setDateFin] = React.useState('');
+  const [catFilter, setCatFilter] = React.useState('Toutes');
+  const [payeurFilter, setPayeurFilter] = React.useState('Tous');
 
   React.useEffect(() => {
     if(deepLink) {
@@ -2624,12 +2766,44 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
     }
   };
 
-  const sortedTx = [...(data.bank.transactions||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
-  const sortedExpenses = [...(data.expenses||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const periodeRange = React.useMemo(() => buildPeriodeRange(periodeId, dateDebut, dateFin), [periodeId, dateDebut, dateFin]);
+  const sortedTx = React.useMemo(() => {
+    let list = [...(data.bank.transactions||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
+    if(periodeId !== 'tout') list = list.filter(t => inPeriode(t.date, periodeRange));
+    return list;
+  }, [data.bank.transactions, periodeRange, periodeId]);
+  const sortedExpenses = React.useMemo(() => {
+    let list = [...(data.expenses||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
+    if(periodeId !== 'tout') list = list.filter(e => inPeriode(e.date, periodeRange));
+    if(catFilter !== 'Toutes') list = list.filter(e => (e.categorie||'Autre') === catFilter);
+    if(payeurFilter !== 'Tous') list = list.filter(e => e.payePar === payeurFilter);
+    return list;
+  }, [data.expenses, periodeRange, periodeId, catFilter, payeurFilter]);
+
+  // Expense totals for KPIs
+  const expenseKPIs = React.useMemo(() => {
+    const total = sortedExpenses.reduce((s,e)=>s+(Number(e.montant)||0),0);
+    const byMicka = sortedExpenses.filter(e=>e.payePar==='Micka').reduce((s,e)=>s+(Number(e.montant)||0),0);
+    const byCesar = sortedExpenses.filter(e=>e.payePar==='César').reduce((s,e)=>s+(Number(e.montant)||0),0);
+    return {total, byMicka, byCesar};
+  }, [sortedExpenses]);
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-800">Banque & Frais</h1>
+
+      {/* Period filter */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500">Période :</span>
+          <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          <KPICard label="Dépenses perso" value={fmt(expenseKPIs.total)} color="red" icon="💸"/>
+          <KPICard label="Micka" value={fmt(expenseKPIs.byMicka)} color="indigo" icon="👤"/>
+          <KPICard label="César" value={fmt(expenseKPIs.byCesar)} color="green" icon="👤"/>
+        </div>
+      </div>
 
       {/* Solde */}
       <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-2xl p-5">
@@ -2652,6 +2826,21 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
       {/* Avances perso */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
         <SectionHeader title="Avances perso (Dépenses)" action={<Btn size="sm" variant="primary" onClick={()=>{setSelectedExpense(null);setExpenseModal(true);}}>+ Ajouter</Btn>}/>
+        <div className="flex gap-3 mb-4 flex-wrap">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
+            <select className={`${selectCls} w-32`} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+              <option value="Toutes">Toutes</option>
+              {EXPENSE_CATEGORIES.map(c=><option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Payé par</label>
+            <select className={`${selectCls} w-28`} value={payeurFilter} onChange={e=>setPayeurFilter(e.target.value)}>
+              {['Tous','Micka','César'].map(a=><option key={a}>{a}</option>)}
+            </select>
+          </div>
+        </div>
         {sortedExpenses.length===0 ? <EmptyState message="Aucune dépense" icon="💸"/> : (<>
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
@@ -3048,6 +3237,219 @@ function DriveModule({data, setData}) {
 }
 
 // ============================================================
+// TRÉSORERIE MODULE
+// ============================================================
+function TresorerieModule({data}) {
+  const [periodeId, setPeriodeId] = React.useState(`y${new Date().getFullYear()}`);
+  const [dateDebut, setDateDebut] = React.useState('');
+  const [dateFin, setDateFin] = React.useState('');
+
+  const stats = React.useMemo(() => {
+    const range = buildPeriodeRange(periodeId, dateDebut, dateFin);
+    const entries = buildLedgerEntries(data);
+    const filteredEntries = entries.filter(e => inPeriode(e.date, range));
+
+    const mickaPay = filteredEntries.filter(e=>e.type==='contract'&&e.assignedTo==='Micka').reduce((s,e)=>s+e.montant,0);
+    const cesarPay = filteredEntries.filter(e=>e.type==='contract'&&e.assignedTo==='César').reduce((s,e)=>s+e.montant,0);
+    const mickaApports = filteredEntries.filter(e=>e.type==='apport'&&e.imputéÀ==='Micka').reduce((s,e)=>s+e.montant,0);
+    const cesarApports = filteredEntries.filter(e=>e.type==='apport'&&e.imputéÀ==='César').reduce((s,e)=>s+e.montant,0);
+    const mickaAdv = filteredEntries.filter(e=>e.type==='expense'&&e.auteur==='Micka').reduce((s,e)=>s+Math.abs(e.montant),0);
+    const cesarAdv = filteredEntries.filter(e=>e.type==='expense'&&e.auteur==='César').reduce((s,e)=>s+Math.abs(e.montant),0);
+    const mickaBank = filteredEntries.filter(e=>e.type==='bank'&&e.imputéÀ==='Micka').reduce((s,e)=>s+e.montant,0);
+    const cesarBank = filteredEntries.filter(e=>e.type==='bank'&&e.imputéÀ==='César').reduce((s,e)=>s+e.montant,0);
+    const netMicka = mickaPay + mickaApports - mickaAdv + mickaBank;
+    const netCesar = cesarPay + cesarApports - cesarAdv + cesarBank;
+    const ecart = Math.abs(netMicka - netCesar);
+    const ecartProj = netMicka + netCesar;
+
+    const nonAnnule = data.contracts.filter(c => c.statut !== 'Annulé');
+    const resteAEncaisserList = nonAnnule.map(c => {
+      const totalPaid = (c.payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0);
+      const resteC = (Number(c.montant)||0) - totalPaid;
+      return {...c, totalPaid, resteC};
+    }).filter(c => c.resteC > 0);
+    const resteMicka = resteAEncaisserList.filter(c=>c.assignedTo==='Micka'||c.assignedTo==='Les deux').reduce((s,c)=>s+c.resteC*(c.assignedTo==='Les deux'?0.5:1),0);
+    const resteCesar = resteAEncaisserList.filter(c=>c.assignedTo==='César'||c.assignedTo==='Les deux').reduce((s,c)=>s+c.resteC*(c.assignedTo==='Les deux'?0.5:1),0);
+    const netMickaProj = netMicka + resteMicka;
+    const netCesarProj = netCesar + resteCesar;
+
+    // Monthly history
+    const monthlyMap = {};
+    filteredEntries.forEach(e => {
+      if(!e.date) return;
+      const mk = e.date.substring(0,7);
+      if(!monthlyMap[mk]) monthlyMap[mk] = {micka:0, cesar:0};
+      if(e.type==='contract') {
+        if(e.assignedTo==='Micka') monthlyMap[mk].micka += e.montant;
+        if(e.assignedTo==='César') monthlyMap[mk].cesar += e.montant;
+      } else if(e.type==='apport') {
+        if(e.imputéÀ==='Micka') monthlyMap[mk].micka += e.montant;
+        if(e.imputéÀ==='César') monthlyMap[mk].cesar += e.montant;
+      } else if(e.type==='expense') {
+        if(e.auteur==='Micka') monthlyMap[mk].micka -= Math.abs(e.montant);
+        if(e.auteur==='César') monthlyMap[mk].cesar -= Math.abs(e.montant);
+      } else if(e.type==='bank') {
+        if(e.imputéÀ==='Micka') monthlyMap[mk].micka += e.montant;
+        if(e.imputéÀ==='César') monthlyMap[mk].cesar += e.montant;
+      }
+    });
+    const monthlyHistory = Object.entries(monthlyMap).sort(([a],[b])=>a.localeCompare(b)).map(([mk,v])=>({mk, ...v}));
+
+    // All movements sorted
+    const mouvements = filteredEntries.map(e => ({...e})).sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+    return {netMicka, netCesar, ecart, netMickaProj, netCesarProj, resteMicka, resteCesar, monthlyHistory, mouvements,
+      mickaPay, cesarPay, mickaApports, cesarApports, mickaAdv, cesarAdv};
+  }, [data, periodeId, dateDebut, dateFin]);
+
+  const recommended = stats.ecart > 50 ? (stats.netMicka > stats.netCesar ? 'César → Micka' : 'Micka → César') : null;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 flex-wrap">
+        <h1 className="text-2xl font-bold text-gray-800">Trésorerie Duo</h1>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500">Période :</span>
+          <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
+        </div>
+      </div>
+
+      {/* Bloc 1: Réelle / Projetée */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[{name:'Micka',net:stats.netMicka,proj:stats.netMickaProj,reste:stats.resteMicka,pay:stats.mickaPay,apports:stats.mickaApports,adv:stats.mickaAdv,color:'indigo'},
+          {name:'César',net:stats.netCesar,proj:stats.netCesarProj,reste:stats.resteCesar,pay:stats.cesarPay,apports:stats.cesarApports,adv:stats.cesarAdv,color:'emerald'}].map(({name,net,proj,reste,pay,apports,adv,color})=>(
+          <div key={name} className={`rounded-2xl shadow-sm border p-5 ${color==='indigo'?'bg-indigo-50 border-indigo-100':'bg-emerald-50 border-emerald-100'}`}>
+            <div className={`text-sm font-bold text-${color}-700 mb-4`}>{name}</div>
+            <div className="space-y-2 mb-4 text-xs text-gray-600">
+              <div className="flex justify-between"><span>CA encaissé attribué</span><span className="font-semibold text-green-700">+{fmt(pay)}</span></div>
+              <div className="flex justify-between"><span>Apports réalisés</span><span className="font-semibold text-teal-700">+{fmt(apports)}</span></div>
+              <div className="flex justify-between"><span>Dépenses perso</span><span className="font-semibold text-red-600">-{fmt(adv)}</span></div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className={`rounded-xl p-3 bg-${color}-100 text-center`}>
+                <div className={`text-xs text-${color}-600 mb-1`}>Réel</div>
+                <div className={`text-lg font-bold text-${color}-800`}>{fmt(net)}</div>
+              </div>
+              <div className="rounded-xl p-3 bg-amber-100 text-center">
+                <div className="text-xs text-amber-600 mb-1">À encaisser</div>
+                <div className="text-lg font-bold text-amber-800">+{fmt(reste)}</div>
+              </div>
+              <div className="rounded-xl p-3 bg-green-100 text-center">
+                <div className="text-xs text-green-600 mb-1">Projeté</div>
+                <div className="text-lg font-bold text-green-800">{fmt(proj)}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bloc 3: Compensation duo */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h2 className="text-base font-semibold text-gray-800 mb-4">⚖️ Compensation duo</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="text-center">
+            <div className="text-xs text-gray-400 mb-1">Écart réel</div>
+            <div className={`text-xl font-bold ${stats.ecart>50?'text-amber-600':'text-green-600'}`}>{fmt(stats.ecart)}</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xs text-gray-400 mb-1">Écart projeté</div>
+            <div className="text-xl font-bold text-gray-700">{fmt(Math.abs(stats.netMickaProj - stats.netCesarProj))}</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xs text-gray-400 mb-1">Total Micka réel</div>
+            <div className="text-xl font-bold text-indigo-700">{fmt(stats.netMicka)}</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xs text-gray-400 mb-1">Total César réel</div>
+            <div className="text-xl font-bold text-emerald-700">{fmt(stats.netCesar)}</div>
+          </div>
+        </div>
+        {recommended && (
+          <div className="mt-4 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <span className="text-amber-500 text-lg">💸</span>
+            <div className="text-sm text-amber-800">Rééquilibrage conseillé : virement <strong>{recommended}</strong> de <strong>{fmt(stats.ecart/2)}</strong></div>
+          </div>
+        )}
+      </div>
+
+      {/* Bloc 4: Historique mensuel */}
+      {stats.monthlyHistory.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">📅 Historique mensuel</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="text-left text-xs font-semibold text-gray-500 px-4 py-3">Mois</th>
+                  <th className="text-right text-xs font-semibold text-indigo-600 px-4 py-3">Micka</th>
+                  <th className="text-right text-xs font-semibold text-emerald-600 px-4 py-3">César</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 px-4 py-3">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.monthlyHistory.map(({mk, micka, cesar}) => {
+                  const [y,m] = mk.split('-');
+                  const label = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'][+m-1] + ' ' + y;
+                  return (
+                    <tr key={mk} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-600">{label}</td>
+                      <td className={`px-4 py-3 text-right font-semibold ${micka>=0?'text-indigo-700':'text-red-500'}`}>{micka>=0?'+':''}{fmt(micka)}</td>
+                      <td className={`px-4 py-3 text-right font-semibold ${cesar>=0?'text-emerald-700':'text-red-500'}`}>{cesar>=0?'+':''}{fmt(cesar)}</td>
+                      <td className={`px-4 py-3 text-right font-bold ${(micka+cesar)>=0?'text-gray-800':'text-red-600'}`}>{fmt(micka+cesar)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Bloc 5: Tableau des mouvements */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h2 className="text-base font-semibold text-gray-800 mb-4">📋 Mouvements impactant la trésorerie</h2>
+        {stats.mouvements.filter(e=>e.type!=='bank'||(e.imputéÀ==='Micka'||e.imputéÀ==='César')).length === 0
+          ? <EmptyState message="Aucun mouvement sur la période" icon="📋"/>
+          : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Date</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Label</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Associé</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 px-3 py-2">Montant</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.mouvements.filter(e => {
+                  if(e.type==='bank' && e.imputéÀ==='Commun') return false;
+                  return true;
+                }).slice(0,50).map(e => {
+                  const who = e.assignedTo || e.imputéÀ || e.auteur || '—';
+                  const amount = e.type==='expense' ? -Math.abs(e.montant) : e.montant;
+                  return (
+                    <tr key={e.id} className="border-b border-gray-50">
+                      <td className="px-3 py-2 text-xs text-gray-500">{formatDate(e.date)}</td>
+                      <td className="px-3 py-2 text-gray-800 max-w-[200px] truncate">{e.label}</td>
+                      <td className="px-3 py-2">{who && <StatusBadge status={who}/>}</td>
+                      <td className={`px-3 py-2 text-right font-semibold ${amount>=0?'text-green-600':'text-red-600'}`}>{amount>=0?'+':''}{fmt(amount)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // ANALYTICS MODULE
 // ============================================================
 const CHART_COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#14b8a6'];
@@ -3092,7 +3494,7 @@ function ChartCanvas({type, data, options}) {
 
 function AnalyticsModule({data}) {
   const now = new Date();
-  const [periodeId, setPeriodeId] = React.useState('annee');
+  const [periodeId, setPeriodeId] = React.useState(`y${now.getFullYear()}`);
   const [dateDebut, setDateDebut] = React.useState('');
   const [dateFin, setDateFin] = React.useState('');
 
@@ -3170,6 +3572,13 @@ function AnalyticsModule({data}) {
     return map;
   }, [filteredEntries]);
 
+  // 7b. Dépenses (avances perso) par associé (période)
+  const depAssocie = React.useMemo(() => {
+    const map={Micka:0,César:0};
+    filteredExpenses.forEach(e=>{if(map[e.payePar]!==undefined)map[e.payePar]+=Math.abs(Number(e.montant)||0);});
+    return map;
+  }, [filteredExpenses]);
+
   // 8. CA signé par mois (période)
   const caSignature = React.useMemo(() => byMonth(
     filteredContracts.filter(c=>c.dateSignature&&inPeriode(c.dateSignature,periodeRange)),
@@ -3197,6 +3606,7 @@ function AnalyticsModule({data}) {
   const clientLabels = Object.keys(caClient).sort((a,b)=>caClient[b]-caClient[a]);
   const caClientChartData = {labels:clientLabels, datasets:[{label:'CA',data:clientLabels.map(k=>caClient[k]),backgroundColor:CHART_COLORS.slice(0,clientLabels.length).map(c=>c+'bb'),borderColor:CHART_COLORS.slice(0,clientLabels.length),borderWidth:1}]};
   const associeChartData = {labels:['Micka','César'], datasets:[{label:'Encaissements',data:[caAssocie.Micka,caAssocie.César],backgroundColor:['#6366f1aa','#10b981aa'],borderColor:['#6366f1','#10b981'],borderWidth:1}]};
+  const depAssocieChartData = {labels:['Micka','César'], datasets:[{label:'Dépenses perso',data:[depAssocie.Micka,depAssocie.César],backgroundColor:['#6366f188','#10b98188'],borderColor:['#6366f1','#10b981'],borderWidth:1}]};
   const caSignatureChartData = {labels:caSignature.labels, datasets:[{label:'CA signé',data:caSignature.values,backgroundColor:'#8b5cf6aa',borderColor:'#8b5cf6',borderWidth:1}]};
   const payTypeLabels = Object.keys(caByPaymentType).sort((a,b)=>caByPaymentType[b]-caByPaymentType[a]);
   const caByPaymentTypeChartData = {labels:payTypeLabels, datasets:[{data:payTypeLabels.map(k=>caByPaymentType[k]),backgroundColor:CHART_COLORS.slice(0,payTypeLabels.length),borderWidth:1}]};
@@ -3204,7 +3614,7 @@ function AnalyticsModule({data}) {
   const totalCAperiod = filteredEntries.filter(e=>e.type==='contract').reduce((s,e)=>s+e.montant,0);
   const totalDepPeriod = filteredExpenses.reduce((s,e)=>s+Math.abs(Number(e.montant)||0),0);
   const totalCAGlobal = allYears.reduce((s,y)=>s+(caAnnuel[y]||0),0);
-  const periodLabel = periodeId==='custom'&&(dateDebut||dateFin) ? `${dateDebut||'…'} → ${dateFin||'…'}` : PERIOD_SHORTCUTS.find(s=>s.id===periodeId)?.label||periodeId;
+  const periodLabel = periodeId==='custom'&&(dateDebut||dateFin) ? `${dateDebut||'…'} → ${dateFin||'…'}` : (periodeId?.startsWith('y') ? periodeId.slice(1) : PERIOD_SHORTCUTS.find(s=>s.id===periodeId)?.label||periodeId);
 
   return (
     <div className="space-y-6">
@@ -3220,7 +3630,9 @@ function AnalyticsModule({data}) {
         </div>
         <div className="flex gap-3 flex-wrap">
           <KPICard label={`CA encaissé (${periodLabel})`} value={fmt(totalCAperiod)} color="green" icon="💰"/>
-          <KPICard label={`Dépenses (${periodLabel})`} value={fmt(totalDepPeriod)} color="red" icon="💸"/>
+          <KPICard label={`Dép. Micka (${periodLabel})`} value={fmt(depAssocie.Micka)} color="indigo" icon="💸"/>
+          <KPICard label={`Dép. César (${periodLabel})`} value={fmt(depAssocie.César)} color="green" icon="💸"/>
+          <KPICard label={`Total dépenses (${periodLabel})`} value={fmt(totalDepPeriod)} color="red" icon="📉"/>
           <KPICard label="CA global (all time)" value={fmt(totalCAGlobal)} color="blue" icon="📊"/>
         </div>
       </div>
@@ -3249,6 +3661,9 @@ function AnalyticsModule({data}) {
         <ChartBlock title={`Encaissements par associé – ${periodLabel}`} icon="👥">
           <ChartCanvas type="bar" data={associeChartData} options={noLegend}/>
         </ChartBlock>
+        <ChartBlock title={`Avances perso par associé – ${periodLabel}`} icon="💸">
+          {(depAssocie.Micka===0&&depAssocie.César===0) ? <EmptyState message="Aucune dépense" icon="💸"/> : <ChartCanvas type="bar" data={depAssocieChartData} options={noLegend}/>}
+        </ChartBlock>
         <ChartBlock title={`CA signé – ${periodLabel}`} icon="✍️">
           {caSignature.labels.length===0 ? <EmptyState message="Aucun contrat signé" icon="✍️"/> : <ChartCanvas type="bar" data={caSignatureChartData} options={noLegend}/>}
         </ChartBlock>
@@ -3266,6 +3681,7 @@ function AnalyticsModule({data}) {
 const NAV_ITEMS = [
   {id:'dashboard', label:'Dashboard', icon:'📊'},
   {id:'analytics', label:'Analytics', icon:'📈'},
+  {id:'tresorerie', label:'Trésorerie', icon:'💰'},
   {id:'quotes', label:'Devis', icon:'📋'},
   {id:'invoices', label:'Facturation', icon:'🧾'},
   {id:'ledger', label:'Grand Livre', icon:'📒'},
@@ -3493,6 +3909,7 @@ function App() {
       case 'tasks': return wrap(<TasksModule data={data} setData={setData}/>);
       case 'bank': return wrap(<BankModule data={data} setData={setData} deepLink={bankDeepLink} clearDeepLink={()=>setBankDeepLink(null)}/>);
       case 'ledger': return wrap(<LedgerModule data={data} onNavigate={onNavigate}/>);
+      case 'tresorerie': return wrap(<TresorerieModule data={data}/>);
       case 'resources': return wrap(<DriveModule data={data} setData={setData}/>);
       default: return wrap(<Dashboard data={data} onNavigate={onNavigate}/>);
     }
