@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>EntrepreneurPRO V15.5</title>
+<title>EntrepreneurPRO V16</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -27,8 +27,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = "V15.5 – ERP & TRÉSORERIE ☁️";
-const SCHEMA_VERSION = 2;
+const APP_VERSION = "V16 – ERP, TRÉSORERIE & PILOTAGE ☁️";
+const SCHEMA_VERSION = 3;
 const LS_KEY = "entrepreneurpro_v14_data";
 
 // ============================================================
@@ -48,6 +48,11 @@ const IMPUTEES = ['Micka', 'César', 'Commun'];
 const PAYMENT_AUTHORS = ['Micka', 'César', 'Client'];
 const PAYMENT_TYPES = ['Virement', 'OPCO', 'Virement + OPCO', 'CB / Stripe', 'Espèces', 'Autre'];
 const OPCO_STATUSES = ['En attente', 'Accepté', 'Refusé', 'Payé'];
+const AUTO_ENTREPRENEUR_SEUIL = 77700;
+const URSSAF_RATE = 0.22;
+const QUOTE_STATUSES = ['Brouillon', 'Envoyé', 'Accepté', 'Refusé', 'Expiré'];
+const INVOICE_STATUSES = ['Non envoyée', 'Envoyée', 'Payée', 'En retard'];
+const PERIODS = [{id:'mois',label:'Ce mois'},{id:'mois_prec',label:'Mois préc.'},{id:'trimestre',label:'Trimestre'},{id:'annee',label:'Cette année'},{id:'tout',label:'Tout'}];
 const SOURCES = ['Réseau', 'LinkedIn', 'Referral', 'Cold Email', 'Site Web', 'Autre'];
 const EXPENSE_CATEGORIES = ['Transport', 'Repas', 'Logiciels', 'Matériel', 'Formation', 'Marketing', 'Autre'];
 
@@ -81,6 +86,11 @@ const BADGE_COLORS = {
   'Virement + OPCO': 'bg-violet-100 text-violet-700',
   'CB / Stripe': 'bg-cyan-100 text-cyan-700',
   'Espèces': 'bg-lime-100 text-lime-700',
+  'Brouillon': 'bg-gray-100 text-gray-600',
+  'Envoyé': 'bg-blue-100 text-blue-700',
+  'Expiré': 'bg-red-100 text-red-700',
+  'Non envoyée': 'bg-gray-100 text-gray-600',
+  'En retard': 'bg-red-100 text-red-700',
 };
 
 // ============================================================
@@ -94,6 +104,61 @@ const formatDate = (d) => d ? new Date(d+'T00:00:00').toLocaleDateString('fr-FR'
 const daysUntil = (dateStr) => { if(!dateStr) return null; return Math.ceil((new Date(dateStr+'T23:59:59')-new Date())/(1000*60*60*24)); };
 const calcPaymentStatus = (montant, payments) => { const total=(payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0); if(total<=0)return'Non payé'; if(total>=montant)return'Payé'; return'Partiel'; };
 const currentMonthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
+
+// CSV Export utility
+function exportCSV(rows, filename) {
+  const csv = rows.map(r => r.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Build alerts from data
+function buildAlerts(data) {
+  const alerts = [];
+  data.contracts.filter(c=>c.statut==='En cours'&&c.dateFin).forEach(c => {
+    const days = daysUntil(c.dateFin);
+    if(days !== null && days <= 7) {
+      const urgency = days <= 0 ? 'danger' : 'warning';
+      const label = days <= 0 ? 'dépassée !' : days === 0 ? "aujourd'hui" : `dans ${days}j`;
+      alerts.push({id:'exp_'+c.id, type:urgency, icon:'📄', msg:`${c.client} – ${c.prestation} : échéance ${label}`, module:'contracts', deepLink:{id:c.id}});
+    }
+  });
+  data.contracts.filter(c=>c.statut!=='Annulé').forEach(c => {
+    const paid = (c.payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0);
+    const reste = (Number(c.montant)||0) - paid;
+    if(reste > 0 && c.dateFin && daysUntil(c.dateFin) !== null && daysUntil(c.dateFin) < -7) {
+      alerts.push({id:'unpaid_'+c.id, type:'warning', icon:'💰', msg:`Impayé: ${fmt(reste)} – ${c.client}`, module:'contracts', deepLink:{id:c.id, tab:'paiements'}});
+    }
+  });
+  const caAnnuel = data.contracts.filter(c=>c.statut!=='Annulé').reduce((s,c)=>s+(Number(c.montant)||0),0);
+  const seuil = data.config?.autoEntrepreneur?.seuil || AUTO_ENTREPRENEUR_SEUIL;
+  const ratio = seuil > 0 ? caAnnuel/seuil : 0;
+  if(ratio >= 1) alerts.push({id:'seuil_100', type:'danger', icon:'🚨', msg:`Seuil auto-entrepreneur DÉPASSÉ ! ${fmt(caAnnuel)} / ${fmt(seuil)}`, module:'dashboard'});
+  else if(ratio >= 0.9) alerts.push({id:'seuil_90', type:'warning', icon:'⚡', msg:`CA à ${Math.round(ratio*100)}% du seuil auto-entrepreneur`, module:'dashboard'});
+  else if(ratio >= 0.8) alerts.push({id:'seuil_80', type:'info', icon:'📊', msg:`CA à ${Math.round(ratio*100)}% du seuil auto-entrepreneur`, module:'dashboard'});
+  (data.quotes||[]).filter(q=>q.statut==='Envoyé'&&q.dateExpiration&&daysUntil(q.dateExpiration)<=3&&daysUntil(q.dateExpiration)>=0).forEach(q => {
+    alerts.push({id:'qexp_'+q.id, type:'warning', icon:'📋', msg:`Devis expirant bientôt: ${q.client} (${fmt(q.montant)})`, module:'quotes'});
+  });
+  return alerts;
+}
+
+// Compute period date range
+function getPeriodeRange(periode) {
+  const now = new Date();
+  const y = now.getFullYear(); const m = now.getMonth();
+  if(periode==='mois') return {start:new Date(y,m,1), end:new Date(y,m+1,0,23,59,59)};
+  if(periode==='mois_prec') return {start:new Date(y,m-1,1), end:new Date(y,m,0,23,59,59)};
+  if(periode==='trimestre') { const q=Math.floor(m/3); return {start:new Date(y,q*3,1), end:new Date(y,q*3+3,0,23,59,59)}; }
+  if(periode==='annee') return {start:new Date(y,0,1), end:new Date(y,11,31,23,59,59)};
+  return null;
+}
+function inPeriode(dateStr, range) {
+  if(!range||!dateStr) return true;
+  const d = new Date(dateStr+'T00:00:00');
+  return d >= range.start && d <= range.end;
+}
 
 // ============================================================
 // SHARED LEDGER BUILDER (source de vérité unique)
@@ -120,7 +185,7 @@ function buildLedgerEntries(data) {
 // INITIAL DATA
 // ============================================================
 const INITIAL_DATA = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   contracts: [
     {id:"c001",clientId:"cl001",client:"TechCorp",prestation:"Développement Web React",montant:5000,assignedTo:"Micka",statut:"En cours",dateDebut:"2025-01-15",dateFin:"2025-03-28",notes:"Projet React prioritaire",payments:[],actions:[{id:"a001",date:"2025-01-15",type:"Email",titre:"Envoi devis",auteur:"Micka",notes:""}]},
     {id:"c002",clientId:"cl002",client:"StartupXYZ",prestation:"Conseil Stratégie",montant:3000,assignedTo:"César",statut:"En cours",dateDebut:"2025-02-01",dateFin:"2025-04-15",notes:"",payments:[{id:"p001",date:"2025-02-15",montant:1500,note:"Acompte 50%",auteur:"Client"}],actions:[]}
@@ -135,6 +200,8 @@ const INITIAL_DATA = {
     {id:"t002",titre:"Appel de suivi StartupXYZ",client:"StartupXYZ",assignedTo:"César",statut:"En cours",priorite:"Moyenne",echeance:"2025-03-05",notes:"Confirmer la deuxième phase"}
   ],
   expenses: [],
+  quotes: [],
+  invoices: [],
   bank: {
     initialBalance: 2500,
     transactions: [],
@@ -145,12 +212,9 @@ const INITIAL_DATA = {
     ]
   },
   config: {
-    driveLinks: {
-      "Google Drive": "https://drive.google.com",
-      "Notion": "https://notion.so",
-      "Calendly": "https://calendly.com",
-      "Linear": "https://linear.app"
-    }
+    driveLinks: {"Google Drive":"https://drive.google.com","Notion":"https://notion.so","Calendly":"https://calendly.com","Linear":"https://linear.app"},
+    objectives: {mickaCAAnnuel:0, cesarCAAnnuel:0},
+    autoEntrepreneur: {seuil:77700, tauxURSSAF:22, assujeTVA:false}
   }
 };
 
@@ -163,16 +227,21 @@ function securizeData(d) {
   if(!Array.isArray(d.clients)) d.clients = [];
   if(!Array.isArray(d.tasks)) d.tasks = [];
   if(!Array.isArray(d.expenses)) d.expenses = [];
+  if(!Array.isArray(d.quotes)) d.quotes = [];
+  if(!Array.isArray(d.invoices)) d.invoices = [];
   if(!d.bank) d.bank = {initialBalance:0, transactions:[], subscriptions:[]};
   if(typeof d.bank.initialBalance !== 'number') d.bank.initialBalance = 0;
   if(!Array.isArray(d.bank.transactions)) d.bank.transactions = [];
   if(!Array.isArray(d.bank.subscriptions)) d.bank.subscriptions = [];
   if(!d.config) d.config = {driveLinks:{}};
   if(!d.config.driveLinks) d.config.driveLinks = {};
+  if(!d.config.objectives) d.config.objectives = {mickaCAAnnuel:0, cesarCAAnnuel:0};
+  if(!d.config.autoEntrepreneur) d.config.autoEntrepreneur = {seuil:77700, tauxURSSAF:22, assujeTVA:false};
   d.contracts.forEach(c => {
     if(!Array.isArray(c.payments)) c.payments = [];
     if(!Array.isArray(c.actions)) c.actions = [];
   });
+  if((d.schemaVersion||0) < 3) d.schemaVersion = 3;
   return d;
 }
 
@@ -214,7 +283,7 @@ function doImport(file, onSuccess, onError) {
         if(!(k in parsed)) { onError('Fichier invalide: clé manquante ' + k); return; }
       }
       delete parsed.passwords;
-      parsed.schemaVersion = 2;
+      parsed.schemaVersion = 3;
       onSuccess(securizeData(parsed));
     } catch(err) {
       onError('Erreur de parsing JSON: ' + err.message);
@@ -399,29 +468,158 @@ function SectionHeader({title, action}) {
 }
 
 // ============================================================
+// ERROR BOUNDARY
+// ============================================================
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = {err:null}; }
+  static getDerivedStateFromError(err) { return {err}; }
+  render() {
+    if(this.state.err) return (
+      <div className="p-8 text-center bg-white rounded-2xl shadow-sm border border-red-100">
+        <div className="text-4xl mb-3">⚠️</div>
+        <h2 className="text-base font-bold text-red-700 mb-2">Erreur dans ce module</h2>
+        <p className="text-xs text-gray-500 mb-4 font-mono">{this.state.err?.message}</p>
+        <button onClick={()=>this.setState({err:null})} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">Réessayer</button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
+// ============================================================
+// PAGINATION
+// ============================================================
+function Pagination({total, page, perPage, onChange}) {
+  const pages = Math.ceil(total/perPage);
+  if(pages<=1) return null;
+  const start = Math.max(1, Math.min(page-2, pages-4));
+  return (
+    <div className="flex items-center justify-between pt-3 border-t border-gray-100 mt-2">
+      <span className="text-xs text-gray-400">{total} éléments · page {page}/{pages}</span>
+      <div className="flex gap-1">
+        <button disabled={page===1} onClick={()=>onChange(1)} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-30">«</button>
+        <button disabled={page===1} onClick={()=>onChange(page-1)} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-30">‹</button>
+        {Array.from({length:Math.min(5,pages)},(_,i)=>start+i).filter(p=>p<=pages).map(p=>(
+          <button key={p} onClick={()=>onChange(p)} className={`px-2 py-1 text-xs border rounded ${p===page?'bg-blue-600 text-white border-blue-600':'border-gray-200 hover:bg-gray-50'}`}>{p}</button>
+        ))}
+        <button disabled={page===pages} onClick={()=>onChange(page+1)} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-30">›</button>
+        <button disabled={page===pages} onClick={()=>onChange(pages)} className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-30">»</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// RECHERCHE GLOBALE (Cmd+K)
+// ============================================================
+function GlobalSearch({data, onNavigate, onClose}) {
+  const [q, setQ] = React.useState('');
+  const inputRef = React.useRef(null);
+  React.useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const results = React.useMemo(() => {
+    if(!q.trim()||q.length<2) return [];
+    const nq = normalize(q);
+    const res = [];
+    (data.contracts||[]).filter(c=>normalize(c.client).includes(nq)||normalize(c.prestation).includes(nq)).slice(0,4).forEach(c=>res.push({type:'Contrat',icon:'📄',label:c.client,sub:c.prestation,val:fmt(c.montant),action:()=>onNavigate('contracts',{id:c.id})}));
+    (data.clients||[]).filter(c=>normalize(c.entreprise).includes(nq)||normalize(c.nom).includes(nq)).slice(0,4).forEach(c=>res.push({type:'Client',icon:'👤',label:c.entreprise,sub:c.nom,val:c.etape,action:()=>onNavigate('crm',{id:c.id})}));
+    (data.tasks||[]).filter(t=>normalize(t.titre).includes(nq)||normalize(t.client||'').includes(nq)).slice(0,3).forEach(t=>res.push({type:'Tâche',icon:'✅',label:t.titre,sub:t.client,val:t.statut,action:()=>onNavigate('tasks')}));
+    (data.bank?.transactions||[]).filter(t=>normalize(t.label).includes(nq)).slice(0,3).forEach(t=>res.push({type:'Transaction',icon:'🏦',label:t.label,sub:formatDate(t.date),val:fmt(t.montant),action:()=>onNavigate('bank',{type:'bankTx',id:t.id})}));
+    (data.quotes||[]).filter(q2=>normalize(q2.client).includes(nq)||normalize(q2.prestation||'').includes(nq)).slice(0,3).forEach(q2=>res.push({type:'Devis',icon:'📋',label:q2.client,sub:q2.prestation,val:fmt(q2.montant),action:()=>onNavigate('quotes')}));
+    return res;
+  }, [q, data]);
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-start justify-center pt-20 px-4" onClick={onClose}>
+      <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
+          <span className="text-gray-400 text-lg">🔍</span>
+          <input ref={inputRef} className="flex-1 text-sm outline-none placeholder-gray-400" placeholder="Rechercher contrats, clients, tâches..." value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==='Escape'&&onClose()}/>
+          <kbd className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">Esc</kbd>
+        </div>
+        {q.length>=2 && (
+          <div className="max-h-80 overflow-y-auto">
+            {results.length===0 ? <div className="px-4 py-8 text-center text-sm text-gray-400">Aucun résultat pour "{q}"</div> : results.map((r,i)=>(
+              <button key={i} onClick={()=>{r.action();onClose();}} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-b border-gray-50 last:border-0">
+                <span className="text-base">{r.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-800 truncate">{r.label}</div>
+                  <div className="text-xs text-gray-400 truncate">{r.type} · {r.sub}</div>
+                </div>
+                <span className="text-xs text-gray-500 font-medium shrink-0">{r.val}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {q.length<2 && (
+          <div className="px-4 py-6 text-center text-xs text-gray-400">Tapez au moins 2 caractères...</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// CENTRE D'ALERTES
+// ============================================================
+function AlertCenter({alerts, onNavigate, onClose}) {
+  const danger = alerts.filter(a=>a.type==='danger');
+  const warning = alerts.filter(a=>a.type==='warning');
+  const info = alerts.filter(a=>a.type==='info');
+  const typeColor = {danger:'bg-red-50 border-red-200 text-red-800', warning:'bg-amber-50 border-amber-200 text-amber-800', info:'bg-blue-50 border-blue-200 text-blue-800'};
+  return (
+    <div className="fixed inset-0 z-[150]" onClick={onClose}>
+      <div className="absolute right-4 top-14 w-80 bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden" onClick={e=>e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+          <span className="text-sm font-semibold text-gray-800">🔔 Alertes ({alerts.length})</span>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+        </div>
+        <div className="max-h-96 overflow-y-auto">
+          {alerts.length===0 ? <div className="px-4 py-8 text-center text-sm text-gray-400">✅ Aucune alerte</div> : alerts.map(a=>(
+            <button key={a.id} onClick={()=>{if(a.module)onNavigate(a.module,a.deepLink||null);onClose();}} className={`w-full text-left flex items-start gap-3 px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 ${a.module?'cursor-pointer':'cursor-default'}`}>
+              <span className="text-base shrink-0 mt-0.5">{a.icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className={`text-xs px-2 py-0.5 rounded-full inline-block mb-1 font-medium ${typeColor[a.type]||'bg-gray-100 text-gray-600'}`}>{a.type==='danger'?'Urgent':a.type==='warning'?'Attention':'Info'}</div>
+                <div className="text-xs text-gray-700 leading-tight">{a.msg}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // DASHBOARD MODULE
 // ============================================================
 function Dashboard({data, onNavigate}) {
+  const [periode, setPeriode] = React.useState('tout');
+  const addToast = useToast();
+
   const stats = React.useMemo(() => {
+    const range = getPeriodeRange(periode);
     const entries = buildLedgerEntries(data);
-    const totalEntrees = entries.filter(e=>e.montant>0).reduce((s,e)=>s+e.montant, 0);
-    const totalSorties = entries.filter(e=>e.montant<0).reduce((s,e)=>s+Math.abs(e.montant), 0);
+    const filteredEntries = entries.filter(e => inPeriode(e.date, range));
+
+    const totalEntrees = filteredEntries.filter(e=>e.montant>0).reduce((s,e)=>s+e.montant, 0);
+    const totalSorties = filteredEntries.filter(e=>e.montant<0).reduce((s,e)=>s+Math.abs(e.montant), 0);
     const balance = totalEntrees - totalSorties;
 
     const nonAnnule = data.contracts.filter(c => c.statut !== 'Annulé');
-    const caSigne = nonAnnule.reduce((s,c) => s + (Number(c.montant)||0), 0);
-    const caEncaisse = entries.filter(e=>e.type==='contract').reduce((s,e)=>s+e.montant, 0);
-    const reste = caSigne - caEncaisse;
+    const caSigne = nonAnnule.filter(c=>inPeriode(c.dateDebut, range)).reduce((s,c) => s + (Number(c.montant)||0), 0);
+    const caEncaisse = filteredEntries.filter(e=>e.type==='contract').reduce((s,e)=>s+e.montant, 0);
+    const reste = nonAnnule.reduce((s,c)=>s+(Number(c.montant)||0),0) - data.contracts.filter(c=>c.statut!=='Annulé').reduce((s,c)=>s+(c.payments||[]).reduce((ps,p)=>ps+(Number(p.montant)||0),0),0);
     const potentiel = data.clients.reduce((s,cl) => s + (Number(cl.potentiel)||0), 0);
 
-    const mickaPay = entries.filter(e=>e.type==='contract'&&e.assignedTo==='Micka').reduce((s,e)=>s+e.montant,0);
-    const cesarPay = entries.filter(e=>e.type==='contract'&&e.assignedTo==='César').reduce((s,e)=>s+e.montant,0);
-    const mickaApports = entries.filter(e=>e.type==='apport'&&e.imputéÀ==='Micka').reduce((s,e)=>s+e.montant,0);
-    const cesarApports = entries.filter(e=>e.type==='apport'&&e.imputéÀ==='César').reduce((s,e)=>s+e.montant,0);
-    const mickaAdv = entries.filter(e=>e.type==='expense'&&e.auteur==='Micka').reduce((s,e)=>s+Math.abs(e.montant),0);
-    const cesarAdv = entries.filter(e=>e.type==='expense'&&e.auteur==='César').reduce((s,e)=>s+Math.abs(e.montant),0);
-    const mickaBank = entries.filter(e=>e.type==='bank'&&e.imputéÀ==='Micka').reduce((s,e)=>s+Math.abs(e.montant),0);
-    const cesarBank = entries.filter(e=>e.type==='bank'&&e.imputéÀ==='César').reduce((s,e)=>s+Math.abs(e.montant),0);
+    const mickaPay = filteredEntries.filter(e=>e.type==='contract'&&e.assignedTo==='Micka').reduce((s,e)=>s+e.montant,0);
+    const cesarPay = filteredEntries.filter(e=>e.type==='contract'&&e.assignedTo==='César').reduce((s,e)=>s+e.montant,0);
+    const mickaApports = filteredEntries.filter(e=>e.type==='apport'&&e.imputéÀ==='Micka').reduce((s,e)=>s+e.montant,0);
+    const cesarApports = filteredEntries.filter(e=>e.type==='apport'&&e.imputéÀ==='César').reduce((s,e)=>s+e.montant,0);
+    const mickaAdv = filteredEntries.filter(e=>e.type==='expense'&&e.auteur==='Micka').reduce((s,e)=>s+Math.abs(e.montant),0);
+    const cesarAdv = filteredEntries.filter(e=>e.type==='expense'&&e.auteur==='César').reduce((s,e)=>s+Math.abs(e.montant),0);
+    const mickaBank = filteredEntries.filter(e=>e.type==='bank'&&e.imputéÀ==='Micka').reduce((s,e)=>s+Math.abs(e.montant),0);
+    const cesarBank = filteredEntries.filter(e=>e.type==='bank'&&e.imputéÀ==='César').reduce((s,e)=>s+Math.abs(e.montant),0);
     const netMicka = mickaPay + mickaApports - mickaAdv - mickaBank;
     const netCesar = cesarPay + cesarApports - cesarAdv - cesarBank;
     const ecart = Math.abs(netMicka - netCesar);
@@ -442,28 +640,97 @@ function Dashboard({data, onNavigate}) {
       .filter(c => c.resteC > 0)
       .sort((a,b) => {
         if(a.dateFin && b.dateFin) return new Date(a.dateFin)-new Date(b.dateFin);
-        if(a.dateFin) return -1;
-        if(b.dateFin) return 1;
-        return 0;
+        if(a.dateFin) return -1; if(b.dateFin) return 1; return 0;
       });
 
-    return {caSigne, caEncaisse, reste, potentiel, netMicka, netCesar, ecart, recommended, urgent, totalEntrees, totalSorties, balance, resteAEncaisserList};
-  }, [data]);
+    // URSSAF / seuil AE
+    const caAnnuelTotal = data.contracts.filter(c=>c.statut!=='Annulé').reduce((s,c)=>s+(Number(c.montant)||0),0);
+    const seuil = data.config?.autoEntrepreneur?.seuil || AUTO_ENTREPRENEUR_SEUIL;
+    const seuilRatio = seuil > 0 ? Math.min(1, caAnnuelTotal/seuil) : 0;
+    const urssafEstimate = caAnnuelTotal * (data.config?.autoEntrepreneur?.tauxURSSAF||22) / 100;
+
+    // Objectives
+    const objMicka = Number(data.config?.objectives?.mickaCAAnnuel)||0;
+    const objCesar = Number(data.config?.objectives?.cesarCAAnnuel)||0;
+    const mickaCaAnnuel = buildLedgerEntries(data).filter(e=>e.type==='contract'&&e.assignedTo==='Micka').reduce((s,e)=>s+e.montant,0);
+    const cesarCaAnnuel = buildLedgerEntries(data).filter(e=>e.type==='contract'&&e.assignedTo==='César').reduce((s,e)=>s+e.montant,0);
+
+    return {caSigne, caEncaisse, reste, potentiel, netMicka, netCesar, ecart, recommended, urgent, totalEntrees, totalSorties, balance, resteAEncaisserList, caAnnuelTotal, seuil, seuilRatio, urssafEstimate, objMicka, objCesar, mickaCaAnnuel, cesarCaAnnuel};
+  }, [data, periode]);
+
+  const seuilColor = stats.seuilRatio >= 1 ? 'bg-red-500' : stats.seuilRatio >= 0.9 ? 'bg-amber-500' : stats.seuilRatio >= 0.8 ? 'bg-yellow-400' : 'bg-green-500';
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-2">
+      <div className="flex flex-wrap items-center gap-3 mb-2">
         <h1 className="text-2xl font-bold text-gray-800">Tableau de bord</h1>
         <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{APP_VERSION}</span>
+        <div className="ml-auto flex gap-1 flex-wrap">
+          {PERIODS.map(p => (
+            <button key={p.id} onClick={()=>setPeriode(p.id)}
+              className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${periode===p.id?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard label="CA Signé" value={fmt(stats.caSigne)} icon="📄" color="blue"/>
-        <KPICard label="CA Encaissé" value={fmt(stats.caEncaisse)} icon="💰" color="green"/>
+        <KPICard label="CA Signé (période)" value={fmt(stats.caSigne)} icon="📄" color="blue"/>
+        <KPICard label="CA Encaissé (période)" value={fmt(stats.caEncaisse)} icon="💰" color="green"/>
         <KPICard label="Reste à encaisser" value={fmt(stats.reste)} icon="⏳" color="amber"/>
         <KPICard label="Potentiel Prospects" value={fmt(stats.potentiel)} icon="🎯" color="purple"/>
       </div>
+
+      {/* Seuil auto-entrepreneur + URSSAF */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-gray-800">🏛️ Seuil Auto-Entrepreneur</h2>
+          <span className={`text-xs font-bold px-2 py-1 rounded-full ${stats.seuilRatio>=1?'bg-red-100 text-red-700':stats.seuilRatio>=0.8?'bg-amber-100 text-amber-700':'bg-green-100 text-green-700'}`}>
+            {Math.round(stats.seuilRatio*100)}%
+          </span>
+        </div>
+        <div className="w-full bg-gray-100 rounded-full h-3 mb-2">
+          <div className={`h-3 rounded-full transition-all ${seuilColor}`} style={{width:`${Math.min(100,Math.round(stats.seuilRatio*100))}%`}}/>
+        </div>
+        <div className="flex justify-between text-xs text-gray-500 mb-3">
+          <span>{fmt(stats.caAnnuelTotal)} CA annuel</span>
+          <span>Seuil: {fmt(stats.seuil)}</span>
+        </div>
+        {stats.seuilRatio >= 1 && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 font-medium mb-2">🚨 Seuil auto-entrepreneur DÉPASSÉ !</div>}
+        {stats.seuilRatio >= 0.9 && stats.seuilRatio < 1 && <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 font-medium mb-2">⚡ Attention: 90% du seuil atteint</div>}
+        <div className="text-xs text-gray-500">URSSAF estimé: <span className="font-semibold text-gray-700">{fmt(stats.urssafEstimate)}</span></div>
+      </div>
+
+      {/* Objectifs CA */}
+      {(stats.objMicka > 0 || stats.objCesar > 0) && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">🎯 Objectifs CA Annuels</h2>
+          <div className="space-y-4">
+            {stats.objMicka > 0 && (() => {
+              const ratio = Math.min(1, stats.mickaCaAnnuel/stats.objMicka);
+              return (
+                <div>
+                  <div className="flex justify-between mb-1"><span className="text-sm font-medium text-indigo-700">Micka</span><span className="text-sm text-gray-600">{fmt(stats.mickaCaAnnuel)} / {fmt(stats.objMicka)}</span></div>
+                  <div className="w-full bg-gray-100 rounded-full h-2"><div className="h-2 rounded-full bg-indigo-500 transition-all" style={{width:`${Math.round(ratio*100)}%`}}/></div>
+                  <div className="text-xs text-gray-400 mt-1">{Math.round(ratio*100)}% de l'objectif</div>
+                </div>
+              );
+            })()}
+            {stats.objCesar > 0 && (() => {
+              const ratio = Math.min(1, stats.cesarCaAnnuel/stats.objCesar);
+              return (
+                <div>
+                  <div className="flex justify-between mb-1"><span className="text-sm font-medium text-emerald-700">César</span><span className="text-sm text-gray-600">{fmt(stats.cesarCaAnnuel)} / {fmt(stats.objCesar)}</span></div>
+                  <div className="w-full bg-gray-100 rounded-full h-2"><div className="h-2 rounded-full bg-emerald-500 transition-all" style={{width:`${Math.round(ratio*100)}%`}}/></div>
+                  <div className="text-xs text-gray-400 mt-1">{Math.round(ratio*100)}% de l'objectif</div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Flux financiers (ledger) */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
@@ -484,7 +751,6 @@ function Dashboard({data, onNavigate}) {
             const wMicka = maxNet > 0 ? Math.min(100, Math.round(Math.abs(stats.netMicka)/maxNet*100)) : 0;
             const wCesar = maxNet > 0 ? Math.min(100, Math.round(Math.abs(stats.netCesar)/maxNet*100)) : 0;
             return (<>
-          {/* Micka */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <span className="text-sm font-medium text-indigo-700">Micka</span>
@@ -494,7 +760,6 @@ function Dashboard({data, onNavigate}) {
               <div className={`h-2 rounded-full transition-all ${stats.netMicka >= 0 ? 'bg-indigo-500' : 'bg-indigo-300'}`} style={{width:`${wMicka}%`}}/>
             </div>
           </div>
-          {/* César */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <span className="text-sm font-medium text-emerald-700">César</span>
@@ -525,11 +790,7 @@ function Dashboard({data, onNavigate}) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs font-semibold text-gray-400 border-b border-gray-100">
-                  <th className="pb-2 pr-3">Client</th>
-                  <th className="pb-2 pr-3">Total</th>
-                  <th className="pb-2 pr-3">Encaissé</th>
-                  <th className="pb-2 pr-3">Reste</th>
-                  <th className="pb-2">Échéance</th>
+                  <th className="pb-2 pr-3">Client</th><th className="pb-2 pr-3">Total</th><th className="pb-2 pr-3">Encaissé</th><th className="pb-2 pr-3">Reste</th><th className="pb-2">Échéance</th>
                 </tr>
               </thead>
               <tbody>
@@ -538,20 +799,11 @@ function Dashboard({data, onNavigate}) {
                   const urgent = days !== null && days <= 7;
                   return (
                     <tr key={c.id} onClick={()=>onNavigate('contracts',{id:c.id,tab:'paiements'})} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors">
-                      <td className="py-2.5 pr-3">
-                        <div className="font-medium text-gray-800">{c.client}</div>
-                        <div className="text-xs text-gray-400 truncate max-w-[140px]">{c.prestation}</div>
-                      </td>
+                      <td className="py-2.5 pr-3"><div className="font-medium text-gray-800">{c.client}</div><div className="text-xs text-gray-400 truncate max-w-[140px]">{c.prestation}</div></td>
                       <td className="py-2.5 pr-3 text-gray-600">{fmt(c.montant)}</td>
                       <td className="py-2.5 pr-3 text-green-600 font-medium">{fmt(c.totalPaid)}</td>
                       <td className="py-2.5 pr-3 font-bold text-amber-600">{fmt(c.resteC)}</td>
-                      <td className="py-2.5">
-                        {c.dateFin ? (
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${urgent ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
-                            {urgent ? `⚡ J-${days}` : formatDate(c.dateFin)}
-                          </span>
-                        ) : <span className="text-xs text-gray-300">—</span>}
-                      </td>
+                      <td className="py-2.5">{c.dateFin ? <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${urgent?'bg-red-100 text-red-700':'bg-gray-100 text-gray-500'}`}>{urgent?`⚡ J-${days}`:formatDate(c.dateFin)}</span> : <span className="text-xs text-gray-300">—</span>}</td>
                     </tr>
                   );
                 })}
@@ -585,6 +837,400 @@ function Dashboard({data, onNavigate}) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// DEVIS MODULE
+// ============================================================
+function QuoteModal({open, onClose, quote, clients, onSave, onDelete, onConvert}) {
+  const [form, setForm] = React.useState({});
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const addToast = useToast();
+
+  React.useEffect(() => {
+    if(open) {
+      if(quote) setForm({...quote});
+      else setForm({id:null, clientId:'', client:'', prestation:'', montant:'', assignedTo:'Micka', statut:'Brouillon', dateCreation:todayStr(), dateExpiration:'', typePaiement:'Virement', notes:''});
+    }
+  }, [open, quote]);
+
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const handleClientSelect = (e) => {
+    const cl = clients.find(c=>c.id===e.target.value);
+    if(cl) setF('client', cl.entreprise); else setF('client','');
+    setF('clientId', e.target.value);
+  };
+
+  const handleSave = () => {
+    if(!form.client.trim()) { addToast('Client requis','error'); return; }
+    if(!form.prestation?.trim()) { addToast('Prestation requise','error'); return; }
+    onSave({...form, montant:Number(form.montant)||0});
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={form.id?`Devis – ${form.client}`:'Nouveau devis'} size="lg">
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Client *</label>
+            <select className={selectCls} value={form.clientId||''} onChange={handleClientSelect}>
+              <option value="">— Sélectionner —</option>
+              {clients.map(c=><option key={c.id} value={c.id}>{c.entreprise} – {c.nom}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Prestation *</label>
+            <input className={inputCls} value={form.prestation||''} onChange={e=>setF('prestation',e.target.value)} placeholder="Description"/>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Montant (€)</label>
+            <input className={inputCls} type="number" step="0.01" value={form.montant||''} onChange={e=>setF('montant',e.target.value)} placeholder="0"/>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Attribué à</label>
+            <select className={selectCls} value={form.assignedTo||'Micka'} onChange={e=>setF('assignedTo',e.target.value)}>{ASSIGNEES.map(a=><option key={a}>{a}</option>)}</select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Statut</label>
+            <select className={selectCls} value={form.statut||'Brouillon'} onChange={e=>setF('statut',e.target.value)}>{QUOTE_STATUSES.map(s=><option key={s}>{s}</option>)}</select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Type de paiement</label>
+            <select className={selectCls} value={form.typePaiement||'Virement'} onChange={e=>setF('typePaiement',e.target.value)}>{PAYMENT_TYPES.map(t=><option key={t}>{t}</option>)}</select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date de création</label>
+            <input className={inputCls} type="date" value={form.dateCreation||todayStr()} onChange={e=>setF('dateCreation',e.target.value)}/>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date d'expiration</label>
+            <input className={inputCls} type="date" value={form.dateExpiration||''} onChange={e=>setF('dateExpiration',e.target.value)}/>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+          <textarea className={textareaCls} rows={2} value={form.notes||''} onChange={e=>setF('notes',e.target.value)}/>
+        </div>
+        <div className="flex justify-between pt-2 border-t">
+          <div className="flex gap-2">
+            {form.id && <Btn variant="danger" size="sm" onClick={()=>setConfirmDelete(true)}>Supprimer</Btn>}
+            {form.id && form.statut==='Accepté' && <Btn variant="success" size="sm" onClick={()=>{onConvert(form);onClose();}}>→ Convertir en Contrat</Btn>}
+          </div>
+          <div className="flex gap-2 ml-auto">
+            <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+          </div>
+        </div>
+      </div>
+      <ConfirmModal open={confirmDelete} onClose={()=>setConfirmDelete(false)} onConfirm={()=>{onDelete(form.id);onClose();}} title="Supprimer ce devis" message="Confirmer la suppression ?"/>
+    </Modal>
+  );
+}
+
+function QuotesModule({data, setData, onNavigate}) {
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [selected, setSelected] = React.useState(null);
+  const [search, setSearch] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState('Tous');
+  const [page, setPage] = React.useState(1);
+  const PER_PAGE = 20;
+  const addToast = useToast();
+
+  const filtered = React.useMemo(() => {
+    return (data.quotes||[]).filter(q=>{
+      if(statusFilter!=='Tous' && q.statut!==statusFilter) return false;
+      if(search && !normalize(q.client).includes(normalize(search)) && !normalize(q.prestation||'').includes(normalize(search))) return false;
+      return true;
+    }).sort((a,b)=>new Date(b.dateCreation||0)-new Date(a.dateCreation||0));
+  }, [data.quotes, search, statusFilter]);
+
+  const paginated = filtered.slice((page-1)*PER_PAGE, page*PER_PAGE);
+
+  const handleSave = (form) => {
+    if(form.id) {
+      setData(d=>({...d, quotes:d.quotes.map(q=>q.id===form.id?form:q)}));
+      addToast('Devis mis à jour','success');
+    } else {
+      setData(d=>({...d, quotes:[...d.quotes, {...form, id:genId()}]}));
+      addToast('Devis créé','success');
+    }
+  };
+
+  const handleDelete = (id) => {
+    setData(d=>({...d, quotes:d.quotes.filter(q=>q.id!==id)}));
+    addToast('Devis supprimé','success');
+  };
+
+  const handleConvert = (quote) => {
+    const newContract = {
+      id: genId(), clientId: quote.clientId||'', client: quote.client, prestation: quote.prestation||'',
+      montant: quote.montant, assignedTo: quote.assignedTo||'Micka', statut: 'En cours',
+      dateSignature: todayStr(), dateDebut: todayStr(), dateFin: '', typePaiement: quote.typePaiement||'Virement',
+      montantOPCO: '', statutOPCO: 'En attente', notes: quote.notes||'', payments: [], actions: []
+    };
+    setData(d=>({
+      ...d,
+      contracts: [...d.contracts, newContract],
+      quotes: d.quotes.map(q=>q.id===quote.id ? {...q, statut:'Accepté'} : q)
+    }));
+    addToast('Devis converti en contrat !','success');
+    onNavigate('contracts', {id: newContract.id});
+  };
+
+  const txTotal = (data.quotes||[]).filter(q=>q.statut!=='Refusé'&&q.statut!=='Expiré').reduce((s,q)=>s+(Number(q.montant)||0),0);
+  const txAccepte = (data.quotes||[]).filter(q=>q.statut==='Accepté').reduce((s,q)=>s+(Number(q.montant)||0),0);
+  const txEnvoye = (data.quotes||[]).filter(q=>q.statut==='Envoyé').length;
+  const tauxConv = (data.quotes||[]).length > 0 ? Math.round((data.quotes||[]).filter(q=>q.statut==='Accepté').length / Math.max((data.quotes||[]).filter(q=>q.statut!=='Brouillon').length,1) * 100) : 0;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">Devis</h1>
+        <Btn variant="primary" onClick={()=>{setSelected(null);setModalOpen(true);}}>+ Nouveau devis</Btn>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard label="Pipeline devis" value={fmt(txTotal)} color="blue" icon="📋"/>
+        <KPICard label="Acceptés" value={fmt(txAccepte)} color="green" icon="✅"/>
+        <KPICard label="En attente" value={`${txEnvoye} devis`} color="amber" icon="⏳"/>
+        <KPICard label="Taux conversion" value={`${isNaN(tauxConv)?0:tauxConv}%`} color="purple" icon="🎯"/>
+      </div>
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-wrap gap-3 items-center">
+        <div className="flex gap-2 flex-wrap">
+          {['Tous',...QUOTE_STATUSES].map(s=>(
+            <button key={s} onClick={()=>{setStatusFilter(s);setPage(1);}} className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
+          ))}
+        </div>
+        <input className={`${inputCls} w-52 ml-auto`} placeholder="Rechercher..." value={search} onChange={e=>{setSearch(e.target.value);setPage(1);}}/>
+      </div>
+      {filtered.length===0 ? <EmptyState message="Aucun devis" icon="📋"/> : (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>{['Client','Prestation','Montant','Attribué','Statut','Créé','Expiration',''].map(h=><th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {paginated.map(q=>(
+                  <tr key={q.id} onClick={()=>{setSelected(q);setModalOpen(true);}} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer">
+                    <td className="px-4 py-3 font-medium text-gray-800">{q.client}</td>
+                    <td className="px-4 py-3 text-gray-600 max-w-[180px] truncate">{q.prestation}</td>
+                    <td className="px-4 py-3 font-semibold">{fmt(q.montant)}</td>
+                    <td className="px-4 py-3"><StatusBadge status={q.assignedTo}/></td>
+                    <td className="px-4 py-3"><StatusBadge status={q.statut}/></td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{formatDate(q.dateCreation)}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{q.dateExpiration?formatDate(q.dateExpiration):'—'}</td>
+                    <td className="px-4 py-3"><button className="text-blue-500 text-xs font-medium">Ouvrir →</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="md:hidden space-y-3 p-4">
+            {paginated.map(q=>(
+              <div key={q.id} onClick={()=>{setSelected(q);setModalOpen(true);}} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer">
+                <div><div className="text-sm font-medium">{q.client}</div><div className="text-xs text-gray-400">{q.prestation} · {formatDate(q.dateCreation)}</div></div>
+                <div className="flex items-center gap-2"><StatusBadge status={q.statut}/><span className="text-sm font-bold text-blue-700">{fmt(q.montant)}</span></div>
+              </div>
+            ))}
+          </div>
+          <div className="px-4 pb-3"><Pagination total={filtered.length} page={page} perPage={PER_PAGE} onChange={setPage}/></div>
+        </div>
+      )}
+      <QuoteModal open={modalOpen} onClose={()=>{setModalOpen(false);setSelected(null);}} quote={selected} clients={data.clients} onSave={handleSave} onDelete={handleDelete} onConvert={handleConvert}/>
+    </div>
+  );
+}
+
+// ============================================================
+// FACTURATION MODULE
+// ============================================================
+function InvoiceModal({open, onClose, invoice, contracts, onSave, onDelete}) {
+  const [form, setForm] = React.useState({});
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const addToast = useToast();
+
+  React.useEffect(() => {
+    if(open) {
+      if(invoice) setForm({...invoice});
+      else setForm({id:null, number:'', contractId:'', client:'', prestation:'', montant:'', statut:'Non envoyée', dateEmission:todayStr(), dateEcheance:'', notes:''});
+    }
+  }, [open, invoice]);
+
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const handleContractSelect = (e) => {
+    const c = contracts.find(ct=>ct.id===e.target.value);
+    if(c) { setF('contractId',c.id); setF('client',c.client); setF('prestation',c.prestation); setF('montant',c.montant); }
+    else { setF('contractId',''); }
+  };
+
+  const handleSave = () => {
+    if(!form.client?.trim()) { addToast('Client requis','error'); return; }
+    onSave({...form, montant:Number(form.montant)||0});
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={form.id?`Facture ${form.number||''}`:'Nouvelle facture'} size="lg">
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Contrat lié (optionnel)</label>
+            <select className={selectCls} value={form.contractId||''} onChange={handleContractSelect}>
+              <option value="">— Aucun —</option>
+              {contracts.filter(c=>c.statut!=='Annulé').map(c=><option key={c.id} value={c.id}>{c.client} – {c.prestation} ({fmt(c.montant)})</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Client *</label>
+            <input className={inputCls} value={form.client||''} onChange={e=>setF('client',e.target.value)} placeholder="Nom du client"/>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Prestation</label>
+            <input className={inputCls} value={form.prestation||''} onChange={e=>setF('prestation',e.target.value)} placeholder="Description"/>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Montant (€)</label>
+            <input className={inputCls} type="number" step="0.01" value={form.montant||''} onChange={e=>setF('montant',e.target.value)} placeholder="0"/>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Statut</label>
+            <select className={selectCls} value={form.statut||'Non envoyée'} onChange={e=>setF('statut',e.target.value)}>{INVOICE_STATUSES.map(s=><option key={s}>{s}</option>)}</select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date d'émission</label>
+            <input className={inputCls} type="date" value={form.dateEmission||todayStr()} onChange={e=>setF('dateEmission',e.target.value)}/>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date d'échéance</label>
+            <input className={inputCls} type="date" value={form.dateEcheance||''} onChange={e=>setF('dateEcheance',e.target.value)}/>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+          <textarea className={textareaCls} rows={2} value={form.notes||''} onChange={e=>setF('notes',e.target.value)}/>
+        </div>
+        <div className="flex justify-between pt-2 border-t">
+          {form.id && <Btn variant="danger" size="sm" onClick={()=>setConfirmDelete(true)}>Supprimer</Btn>}
+          <div className="flex gap-2 ml-auto">
+            <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+          </div>
+        </div>
+      </div>
+      <ConfirmModal open={confirmDelete} onClose={()=>setConfirmDelete(false)} onConfirm={()=>{onDelete(form.id);onClose();}} title="Supprimer cette facture" message="Confirmer ?"/>
+    </Modal>
+  );
+}
+
+function InvoicesModule({data, setData}) {
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [selected, setSelected] = React.useState(null);
+  const [statusFilter, setStatusFilter] = React.useState('Tous');
+  const [search, setSearch] = React.useState('');
+  const [page, setPage] = React.useState(1);
+  const PER_PAGE = 20;
+  const addToast = useToast();
+
+  const genNumber = () => {
+    const year = new Date().getFullYear();
+    const existing = (data.invoices||[]).filter(i=>i.number&&i.number.startsWith(String(year)));
+    const max = existing.reduce((m,i)=>{const n=parseInt(i.number.split('-')[1]||0);return n>m?n:m;},0);
+    return `${year}-${String(max+1).padStart(3,'0')}`;
+  };
+
+  const filtered = React.useMemo(()=>(data.invoices||[]).filter(i=>{
+    if(statusFilter!=='Tous'&&i.statut!==statusFilter) return false;
+    if(search&&!normalize(i.client).includes(normalize(search))&&!normalize(i.number||'').includes(normalize(search))) return false;
+    return true;
+  }).sort((a,b)=>new Date(b.dateEmission||0)-new Date(a.dateEmission||0)), [data.invoices, statusFilter, search]);
+
+  const paginated = filtered.slice((page-1)*PER_PAGE, page*PER_PAGE);
+
+  const handleSave = (form) => {
+    if(form.id) {
+      setData(d=>({...d, invoices:d.invoices.map(i=>i.id===form.id?form:i)}));
+      addToast('Facture mise à jour','success');
+    } else {
+      const num = genNumber();
+      setData(d=>({...d, invoices:[...d.invoices, {...form, id:genId(), number:num}]}));
+      addToast(`Facture ${num} créée`,'success');
+    }
+  };
+
+  const handleDelete = (id) => {
+    setData(d=>({...d, invoices:d.invoices.filter(i=>i.id!==id)}));
+    addToast('Facture supprimée','success');
+  };
+
+  const totalEmis = (data.invoices||[]).reduce((s,i)=>s+(Number(i.montant)||0),0);
+  const totalPaye = (data.invoices||[]).filter(i=>i.statut==='Payée').reduce((s,i)=>s+(Number(i.montant)||0),0);
+  const totalEnAttente = (data.invoices||[]).filter(i=>i.statut==='Envoyée').reduce((s,i)=>s+(Number(i.montant)||0),0);
+  const totalRetard = (data.invoices||[]).filter(i=>i.statut==='En retard').reduce((s,i)=>s+(Number(i.montant)||0),0);
+
+  const statusBtnCls = (s) => `px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">Facturation</h1>
+        <Btn variant="primary" onClick={()=>{setSelected(null);setModalOpen(true);}}>+ Nouvelle facture</Btn>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPICard label="Total émis" value={fmt(totalEmis)} color="blue" icon="📄"/>
+        <KPICard label="Payées" value={fmt(totalPaye)} color="green" icon="✅"/>
+        <KPICard label="En attente" value={fmt(totalEnAttente)} color="amber" icon="⏳"/>
+        <KPICard label="En retard" value={fmt(totalRetard)} color="red" icon="🚨"/>
+      </div>
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-wrap gap-3 items-center">
+        <div className="flex gap-2 flex-wrap">
+          {['Tous',...INVOICE_STATUSES].map(s=><button key={s} onClick={()=>{setStatusFilter(s);setPage(1);}} className={statusBtnCls(s)}>{s}</button>)}
+        </div>
+        <input className={`${inputCls} w-48 ml-auto`} placeholder="Rechercher..." value={search} onChange={e=>{setSearch(e.target.value);setPage(1);}}/>
+      </div>
+      {filtered.length===0 ? <EmptyState message="Aucune facture" icon="📄"/> : (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>{['N°','Client','Prestation','Montant','Statut','Émise le','Échéance',''].map(h=><th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {paginated.map(inv=>(
+                  <tr key={inv.id} onClick={()=>{setSelected(inv);setModalOpen(true);}} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer">
+                    <td className="px-4 py-3 font-mono text-xs font-semibold text-blue-700">{inv.number}</td>
+                    <td className="px-4 py-3 font-medium">{inv.client}</td>
+                    <td className="px-4 py-3 text-gray-600 max-w-[160px] truncate">{inv.prestation}</td>
+                    <td className="px-4 py-3 font-semibold">{fmt(inv.montant)}</td>
+                    <td className="px-4 py-3"><StatusBadge status={inv.statut}/></td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{formatDate(inv.dateEmission)}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{inv.dateEcheance?formatDate(inv.dateEcheance):'—'}</td>
+                    <td className="px-4 py-3"><button className="text-blue-500 text-xs font-medium">Ouvrir →</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="md:hidden space-y-3 p-4">
+            {paginated.map(inv=>(
+              <div key={inv.id} onClick={()=>{setSelected(inv);setModalOpen(true);}} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer">
+                <div>
+                  <div className="text-xs font-mono text-blue-700 font-semibold">{inv.number}</div>
+                  <div className="text-sm font-medium">{inv.client}</div>
+                  <div className="text-xs text-gray-400">{formatDate(inv.dateEmission)}</div>
+                </div>
+                <div className="flex items-center gap-2"><StatusBadge status={inv.statut}/><span className="text-sm font-bold">{fmt(inv.montant)}</span></div>
+              </div>
+            ))}
+          </div>
+          <div className="px-4 pb-3"><Pagination total={filtered.length} page={page} perPage={PER_PAGE} onChange={setPage}/></div>
+        </div>
+      )}
+      <InvoiceModal open={modalOpen} onClose={()=>{setModalOpen(false);setSelected(null);}} invoice={selected} contracts={data.contracts||[]} onSave={handleSave} onDelete={handleDelete}/>
     </div>
   );
 }
@@ -920,6 +1566,8 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
   const [selectedContract, setSelectedContract] = React.useState(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [modalTab, setModalTab] = React.useState('infos');
+  const [sortKey, setSortKey] = React.useState('dateSignature');
+  const [sortDir, setSortDir] = React.useState('desc');
 
   React.useEffect(() => {
     if(deepLink) {
@@ -935,6 +1583,21 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
     }
   }, [deepLink]);
 
+  const handleSort = (key) => {
+    if(sortKey===key) setSortDir(d=>d==='asc'?'desc':'asc');
+    else { setSortKey(key); setSortDir('desc'); }
+  };
+
+  const handleExportCSV = () => {
+    const rows = [['Client','Prestation','Montant','Attribué','Statut','Type Paiement','Date Signature','Encaissé','Reste']];
+    (data.contracts||[]).forEach(c=>{
+      const paid=(c.payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0);
+      rows.push([c.client,c.prestation,c.montant,c.assignedTo,c.statut,c.typePaiement||'',c.dateSignature||'',paid,(Number(c.montant)||0)-paid]);
+    });
+    exportCSV(rows, `contrats_${todayStr()}.csv`);
+    addToast('Export CSV téléchargé','success');
+  };
+
   const filtered = React.useMemo(() => {
     return data.contracts.filter(c => {
       if(statusFilter !== 'Tous' && c.statut !== statusFilter) return false;
@@ -943,8 +1606,14 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
         if(!normalize(c.client).includes(q) && !normalize(c.prestation).includes(q)) return false;
       }
       return true;
+    }).sort((a,b)=>{
+      const mult = sortDir==='asc'?1:-1;
+      if(sortKey==='montant') return mult*(Number(a.montant||0)-Number(b.montant||0));
+      if(sortKey==='client') return mult*a.client.localeCompare(b.client);
+      if(sortKey==='dateSignature') return mult*(new Date(a.dateSignature||a.dateDebut||0)-new Date(b.dateSignature||b.dateDebut||0));
+      return 0;
     });
-  }, [data.contracts, statusFilter, search]);
+  }, [data.contracts, statusFilter, search, sortKey, sortDir]);
 
   const totals = React.useMemo(() => {
     const nonAnnule = filtered.filter(c => c.statut !== 'Annulé');
@@ -984,7 +1653,10 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Contrats</h1>
-        <Btn variant="primary" onClick={openNew}>+ Nouveau contrat</Btn>
+        <div className="flex gap-2">
+          <Btn variant="outline" size="sm" onClick={handleExportCSV}>⬇️ CSV</Btn>
+          <Btn variant="primary" onClick={openNew}>+ Nouveau contrat</Btn>
+        </div>
       </div>
 
       {/* Filters */}
@@ -1013,9 +1685,13 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
         <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>{['Client','Prestation','Montant','Attribué','Statut','Paiement','Type paie.','Signature',''].map(h=>(
-                <th key={h} className="text-left text-xs font-semibold text-gray-500 px-4 py-3">{h}</th>
-              ))}</tr>
+              <tr>
+                {[{label:'Client',key:'client'},{label:'Prestation',key:null},{label:'Montant',key:'montant'},{label:'Attribué',key:null},{label:'Statut',key:null},{label:'Paiement',key:null},{label:'Type paie.',key:null},{label:'Signature',key:'dateSignature'},{label:'',key:null}].map(h=>(
+                  <th key={h.label} onClick={h.key?()=>handleSort(h.key):undefined} className={`text-left text-xs font-semibold text-gray-500 px-4 py-3 ${h.key?'cursor-pointer hover:text-gray-800 select-none':''}`}>
+                    {h.label}{h.key&&sortKey===h.key?(sortDir==='asc'?' ↑':' ↓'):''}
+                  </th>
+                ))}
+              </tr>
             </thead>
             <tbody>
               {filtered.map(c => {
@@ -1994,9 +2670,20 @@ function LedgerModule({data, onNavigate}) {
     else if(e.type==='contract') onNavigate('contracts',{id:e.contractId,tab:'paiements'});
   };
 
+  const handleExportCSVLedger = () => {
+    const rows = [['Date','Label','Source','Auteur','Montant','Catégorie']];
+    filtered.forEach(e=>{
+      rows.push([e.date||'',e.label||'',e.source||'',e.auteur||'',e.montant,e.category||'']);
+    });
+    exportCSV(rows, `grand_livre_${todayStr()}.csv`);
+  };
+
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-800">Grand Livre Unifié</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">Grand Livre Unifié</h1>
+        <Btn variant="outline" size="sm" onClick={handleExportCSVLedger}>⬇️ CSV</Btn>
+      </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -2113,9 +2800,21 @@ function LedgerModule({data, onNavigate}) {
 // ============================================================
 function DriveModule({data, setData}) {
   const addToast = useToast();
+  const [tab, setTab] = React.useState('liens');
   const [editMode, setEditMode] = React.useState(false);
   const [newName, setNewName] = React.useState('');
   const [newUrl, setNewUrl] = React.useState('');
+  const [configForm, setConfigForm] = React.useState({});
+
+  React.useEffect(() => {
+    setConfigForm({
+      mickaCAAnnuel: data.config?.objectives?.mickaCAAnnuel||0,
+      cesarCAAnnuel: data.config?.objectives?.cesarCAAnnuel||0,
+      seuil: data.config?.autoEntrepreneur?.seuil||77700,
+      tauxURSSAF: data.config?.autoEntrepreneur?.tauxURSSAF||22,
+      assujeTVA: data.config?.autoEntrepreneur?.assujeTVA||false,
+    });
+  }, [data.config]);
 
   const links = data.config?.driveLinks || {};
 
@@ -2136,42 +2835,91 @@ function DriveModule({data, setData}) {
     addToast('Lien supprimé','success');
   };
 
+  const saveConfig = () => {
+    setData(d=>({...d, config:{...d.config,
+      objectives:{mickaCAAnnuel:Number(configForm.mickaCAAnnuel)||0, cesarCAAnnuel:Number(configForm.cesarCAAnnuel)||0},
+      autoEntrepreneur:{seuil:Number(configForm.seuil)||77700, tauxURSSAF:Number(configForm.tauxURSSAF)||22, assujeTVA:!!configForm.assujeTVA}
+    }}));
+    addToast('Configuration enregistrée','success');
+  };
+
   const linkIcons = {'Google Drive':'📁','Notion':'📝','Calendly':'📅','Linear':'📋'};
+
+  const tabs = [{id:'liens',label:'Liens & Drive'},{id:'config',label:'⚙️ Configuration'}];
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Drive & Liens</h1>
-        <Btn variant={editMode?'secondary':'outline'} onClick={()=>setEditMode(v=>!v)}>{editMode?'Terminer':'Modifier'}</Btn>
-      </div>
+      <h1 className="text-2xl font-bold text-gray-800">Drive & Liens</h1>
+      <Tabs tabs={tabs} active={tab} onChange={setTab}/>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        {Object.entries(links).map(([name, url]) => (
-          <div key={name} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex items-start justify-between group">
-            <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0 hover:text-blue-600 transition-colors">
-              <span className="text-2xl">{linkIcons[name]||'🔗'}</span>
-              <div className="min-w-0">
-                <div className="font-semibold text-gray-800 text-sm">{name}</div>
-                <div className="text-xs text-gray-400 truncate mt-0.5">{url}</div>
+      {tab==='liens' && (<>
+        <div className="flex justify-end">
+          <Btn variant={editMode?'secondary':'outline'} onClick={()=>setEditMode(v=>!v)}>{editMode?'Terminer':'Modifier'}</Btn>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {Object.entries(links).map(([name, url]) => (
+            <div key={name} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex items-start justify-between group">
+              <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0 hover:text-blue-600 transition-colors">
+                <span className="text-2xl">{linkIcons[name]||'🔗'}</span>
+                <div className="min-w-0">
+                  <div className="font-semibold text-gray-800 text-sm">{name}</div>
+                  <div className="text-xs text-gray-400 truncate mt-0.5">{url}</div>
+                </div>
+              </a>
+              {editMode && (
+                <button onClick={()=>removeLink(name)} className="text-gray-200 hover:text-red-500 text-xl leading-none ml-2 flex-shrink-0">&times;</button>
+              )}
+            </div>
+          ))}
+          {editMode && (
+            <div className="bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 p-5 space-y-3">
+              <div className="text-xs font-semibold text-gray-500 mb-2">Ajouter un lien</div>
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom</label><input className={inputCls} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Google Drive"/></div>
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">URL</label><input className={inputCls} value={newUrl} onChange={e=>setNewUrl(e.target.value)} placeholder="https://..."/></div>
+              <Btn size="sm" variant="primary" onClick={addLink}>Ajouter</Btn>
+            </div>
+          )}
+        </div>
+        {Object.keys(links).length===0 && !editMode && <EmptyState message="Aucun lien configuré" icon="🔗"/>}
+      </>)}
+
+      {tab==='config' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <h2 className="text-base font-semibold text-gray-800 mb-4">🎯 Objectifs CA annuels</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Objectif CA Micka (€/an)</label>
+                <input className={inputCls} type="number" value={configForm.mickaCAAnnuel||''} onChange={e=>setConfigForm(f=>({...f,mickaCAAnnuel:e.target.value}))} placeholder="0"/>
               </div>
-            </a>
-            {editMode && (
-              <button onClick={()=>removeLink(name)} className="text-gray-200 hover:text-red-500 text-xl leading-none ml-2 flex-shrink-0">&times;</button>
-            )}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Objectif CA César (€/an)</label>
+                <input className={inputCls} type="number" value={configForm.cesarCAAnnuel||''} onChange={e=>setConfigForm(f=>({...f,cesarCAAnnuel:e.target.value}))} placeholder="0"/>
+              </div>
+            </div>
           </div>
-        ))}
-
-        {editMode && (
-          <div className="bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 p-5 space-y-3">
-            <div className="text-xs font-semibold text-gray-500 mb-2">Ajouter un lien</div>
-            <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom</label><input className={inputCls} value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Google Drive"/></div>
-            <div><label className="block text-xs font-medium text-gray-600 mb-1">URL</label><input className={inputCls} value={newUrl} onChange={e=>setNewUrl(e.target.value)} placeholder="https://..."/></div>
-            <Btn size="sm" variant="primary" onClick={addLink}>Ajouter</Btn>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <h2 className="text-base font-semibold text-gray-800 mb-4">⚡ Auto-entrepreneur</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Seuil auto-entrepreneur (€)</label>
+                <input className={inputCls} type="number" value={configForm.seuil||''} onChange={e=>setConfigForm(f=>({...f,seuil:e.target.value}))} placeholder="77700"/>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Taux URSSAF (%)</label>
+                <input className={inputCls} type="number" step="0.1" value={configForm.tauxURSSAF||''} onChange={e=>setConfigForm(f=>({...f,tauxURSSAF:e.target.value}))} placeholder="22"/>
+              </div>
+              <div className="flex items-center gap-2 sm:col-span-2">
+                <input type="checkbox" id="tva" checked={!!configForm.assujeTVA} onChange={e=>setConfigForm(f=>({...f,assujeTVA:e.target.checked}))} className="rounded"/>
+                <label htmlFor="tva" className="text-sm text-gray-700">Assujetti à la TVA</label>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
-
-      {Object.keys(links).length===0 && !editMode && <EmptyState message="Aucun lien configuré" icon="🔗"/>}
+          <div className="flex justify-end">
+            <Btn variant="primary" onClick={saveConfig}>Enregistrer la configuration</Btn>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2525,6 +3273,8 @@ function AnalyticsModule({data}) {
 const NAV_ITEMS = [
   {id:'dashboard', label:'Dashboard', icon:'📊'},
   {id:'analytics', label:'Analytics', icon:'📈'},
+  {id:'quotes', label:'Devis', icon:'📋'},
+  {id:'invoices', label:'Facturation', icon:'🧾'},
   {id:'ledger', label:'Grand Livre', icon:'📒'},
   {id:'contracts', label:'Contrats', icon:'📄'},
   {id:'tasks', label:'Tâches', icon:'✅'},
@@ -2603,8 +3353,22 @@ function App() {
   const [bankDeepLink, setBankDeepLink] = React.useState(null);
   const [synced, setSynced] = React.useState(false);
   const [syncStatus, setSyncStatus] = React.useState('loading'); // 'loading' | 'ok' | 'error'
+  const [showSearch, setShowSearch] = React.useState(false);
+  const [showAlerts, setShowAlerts] = React.useState(false);
   const isRemoteUpdate = React.useRef(false);
   const addToast = useToast();
+
+  const alerts = React.useMemo(() => buildAlerts(data), [data]);
+
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const handler = (e) => {
+      if((e.metaKey||e.ctrlKey)&&e.key==='k') { e.preventDefault(); setShowSearch(v=>!v); }
+      if(e.key==='Escape') { setShowSearch(false); setShowAlerts(false); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   // On mount: fetch from Supabase + subscribe realtime
   React.useEffect(() => {
@@ -2667,16 +3431,19 @@ function App() {
   };
 
   const renderModule = () => {
+    const wrap = (component) => <ErrorBoundary key={activeModule}>{component}</ErrorBoundary>;
     switch(activeModule) {
-      case 'dashboard': return <Dashboard data={data} onNavigate={onNavigate}/>;
-      case 'analytics': return <AnalyticsModule data={data}/>;
-      case 'contracts': return <ContractsModule data={data} setData={setData} deepLink={contractDeepLink} clearDeepLink={()=>setContractDeepLink(null)}/>;
-      case 'crm': return <CRMModule data={data} setData={setData} onNavigate={onNavigate}/>;
-      case 'tasks': return <TasksModule data={data} setData={setData}/>;
-      case 'bank': return <BankModule data={data} setData={setData} deepLink={bankDeepLink} clearDeepLink={()=>setBankDeepLink(null)}/>;
-      case 'ledger': return <LedgerModule data={data} onNavigate={onNavigate}/>;
-      case 'resources': return <DriveModule data={data} setData={setData}/>;
-      default: return <Dashboard data={data} onNavigate={onNavigate}/>;
+      case 'dashboard': return wrap(<Dashboard data={data} onNavigate={onNavigate}/>);
+      case 'analytics': return wrap(<AnalyticsModule data={data}/>);
+      case 'quotes': return wrap(<QuotesModule data={data} setData={setData} onNavigate={onNavigate}/>);
+      case 'invoices': return wrap(<InvoicesModule data={data} setData={setData}/>);
+      case 'contracts': return wrap(<ContractsModule data={data} setData={setData} deepLink={contractDeepLink} clearDeepLink={()=>setContractDeepLink(null)}/>);
+      case 'crm': return wrap(<CRMModule data={data} setData={setData} onNavigate={onNavigate}/>);
+      case 'tasks': return wrap(<TasksModule data={data} setData={setData}/>);
+      case 'bank': return wrap(<BankModule data={data} setData={setData} deepLink={bankDeepLink} clearDeepLink={()=>setBankDeepLink(null)}/>);
+      case 'ledger': return wrap(<LedgerModule data={data} onNavigate={onNavigate}/>);
+      case 'resources': return wrap(<DriveModule data={data} setData={setData}/>);
+      default: return wrap(<Dashboard data={data} onNavigate={onNavigate}/>);
     }
   };
 
@@ -2707,7 +3474,21 @@ function App() {
       <div className="md:hidden fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
         <button onClick={()=>setSidebarOpen(true)} className="text-gray-600 hover:text-gray-800 text-xl">☰</button>
         <div className="font-semibold text-gray-800 text-sm">EntrepreneurPRO</div>
-        <div className="ml-auto text-xs text-gray-400">{APP_VERSION}</div>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={()=>setShowSearch(v=>!v)} className="text-gray-400 hover:text-gray-700 text-base px-1">🔍</button>
+          <button onClick={()=>setShowAlerts(v=>!v)} className="relative text-gray-400 hover:text-gray-700 text-base px-1">
+            🔔{alerts.length>0&&<span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">{alerts.length}</span>}
+          </button>
+        </div>
+      </div>
+      {/* Desktop alert bell (in main area top right) */}
+      <div className="hidden md:flex fixed top-3 right-4 z-30 items-center gap-2">
+        <button onClick={()=>setShowSearch(v=>!v)} className="text-gray-400 hover:text-gray-700 text-sm bg-white border border-gray-200 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5">
+          🔍 <span className="text-xs text-gray-500">Cmd+K</span>
+        </button>
+        <button onClick={()=>setShowAlerts(v=>!v)} className="relative text-gray-400 hover:text-gray-700 bg-white border border-gray-200 px-3 py-1.5 rounded-lg shadow-sm text-sm">
+          🔔{alerts.length>0&&<span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">{alerts.length}</span>}
+        </button>
       </div>
       {/* Main content */}
       <main className="md:ml-60 pt-0 md:pt-0">
@@ -2717,6 +3498,8 @@ function App() {
           </div>
         </div>
       </main>
+      {showSearch && <GlobalSearch data={data} onNavigate={(mod, dl)=>{onNavigate(mod, dl);}} onClose={()=>setShowSearch(false)}/>}
+      {showAlerts && <AlertCenter alerts={alerts} onNavigate={onNavigate} onClose={()=>setShowAlerts(false)}/>}
     </div>
   );
 }
