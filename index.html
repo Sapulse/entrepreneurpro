@@ -3359,8 +3359,8 @@ function TresorerieModule({data}) {
             <div className={`text-sm font-bold text-${color}-700 mb-4`}>{name}</div>
             <div className="space-y-2 mb-4 text-xs text-gray-600">
               <div className="flex justify-between"><span>CA encaissé attribué</span><span className="font-semibold text-green-700">+{fmt(pay)}</span></div>
-              <div className="flex justify-between"><span>Apports réalisés</span><span className="font-semibold text-teal-700">+{fmt(apports)}</span></div>
-              <div className="flex justify-between"><span>Dépenses perso</span><span className="font-semibold text-red-600">-{fmt(adv)}</span></div>
+              {apports > 0 && <div className="flex justify-between"><span>Apports investis</span><span className="font-semibold text-orange-500">-{fmt(apports)}</span></div>}
+              {adv > 0 && <div className="flex justify-between"><span>Dépenses perso</span><span className="font-semibold text-red-600">-{fmt(adv)}</span></div>}
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className={`rounded-xl p-3 bg-${color}-100 text-center`}>
