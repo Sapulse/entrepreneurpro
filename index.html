@@ -796,9 +796,9 @@ function Dashboard({data, onNavigate}) {
     const netMicka = mickaPay - mickaAdv - mickaApports + mickaBank;
     const netCesar = cesarPay - cesarAdv - cesarApports + cesarBank;
     const ecart = Math.abs(netMicka - netCesar);
-    // Qui doit à qui : la personne avec le net le plus élevé est "créditrice"
-    const debiteur = netMicka > netCesar ? 'César' : netCesar > netMicka ? 'Micka' : null;
-    const crediteur = netMicka > netCesar ? 'Micka' : netCesar > netMicka ? 'César' : null;
+    // Qui doit à qui : la personne avec le net le plus élevé a reçu plus que sa part → elle est débitrice
+    const debiteur = netMicka > netCesar ? 'Micka' : netCesar > netMicka ? 'César' : null;
+    const crediteur = netMicka > netCesar ? 'César' : netCesar > netMicka ? 'Micka' : null;
     const montantDu = ecart / 2; // chacun devrait avoir la moitié du total duo
 
     const urgent = data.contracts.filter(c => c.statut === 'En cours' && c.dateFin)
@@ -3288,8 +3288,8 @@ function TresorerieModule({data}) {
     const netMicka = mickaPay - mickaAdv - mickaApports + mickaBank;
     const netCesar = cesarPay - cesarAdv - cesarApports + cesarBank;
     const ecart = Math.abs(netMicka - netCesar);
-    const debiteur = netMicka > netCesar ? 'César' : netCesar > netMicka ? 'Micka' : null;
-    const crediteur = netMicka > netCesar ? 'Micka' : netCesar > netMicka ? 'César' : null;
+    const debiteur = netMicka > netCesar ? 'Micka' : netCesar > netMicka ? 'César' : null;
+    const crediteur = netMicka > netCesar ? 'César' : netCesar > netMicka ? 'Micka' : null;
     const montantDu = ecart / 2;
 
     const nonAnnule = data.contracts.filter(c => c.statut !== 'Annulé');
@@ -3401,10 +3401,10 @@ function TresorerieModule({data}) {
             <div className="text-xl font-bold text-emerald-700">{fmt(stats.netCesar)}</div>
           </div>
         </div>
-        {recommended && (
+        {stats.debiteur && stats.ecart > 50 && (
           <div className="mt-4 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
             <span className="text-amber-500 text-lg">💸</span>
-            <div className="text-sm text-amber-800">Rééquilibrage conseillé : virement <strong>{recommended}</strong> de <strong>{fmt(stats.ecart/2)}</strong></div>
+            <div className="text-sm text-amber-800">Rééquilibrage conseillé : <strong>{stats.debiteur}</strong> doit virer <strong>{fmt(stats.montantDu)}</strong> à <strong>{stats.crediteur}</strong></div>
           </div>
         )}
       </div>
