@@ -3728,10 +3728,227 @@ function AnalyticsModule({data}) {
 }
 
 // ============================================================
+// PILOTAGE MODULE
+// ============================================================
+function PilotageModule({data}) {
+  const [periodeId, setPeriodeId] = React.useState('annee');
+  const [dateDebut, setDateDebut] = React.useState('');
+  const [dateFin, setDateFin] = React.useState('');
+
+  const stats = React.useMemo(() => {
+    const range = buildPeriodeRange(periodeId, dateDebut, dateFin);
+    const entries = buildLedgerEntries(data);
+    const filtered = entries.filter(e => inPeriode(e.date, range));
+
+    // === BLOC 1 – Activité ===
+    const nonAnnule = data.contracts.filter(c => c.statut !== 'Annulé');
+    const contratsSignesPeriode = nonAnnule.filter(c => inPeriode(c.dateDebut, range));
+    const caSigne = contratsSignesPeriode.reduce((s, c) => s + (Number(c.montant)||0), 0);
+    const caEncaisse = filtered.filter(e => e.type === 'contract').reduce((s, e) => s + e.montant, 0);
+    const nbContrats = contratsSignesPeriode.length;
+    const panierMoyen = nbContrats > 0 ? caSigne / nbContrats : 0;
+
+    const resteList = nonAnnule.map(c => {
+      const paid = (c.payments||[]).reduce((s, p) => s + (Number(p.montant)||0), 0);
+      return {...c, reste: (Number(c.montant)||0) - paid};
+    }).filter(c => c.reste > 0);
+    const resteTotal = resteList.reduce((s, c) => s + c.reste, 0);
+
+    const totalCRM = data.clients.length;
+    const nbClients = data.clients.filter(cl => cl.etape === 'Client').length;
+    const tauxTransfo = totalCRM > 0 ? Math.round((nbClients / totalCRM) * 100) : 0;
+
+    // === BLOC 2 – Rentabilité ===
+    const totalDepenses = filtered.filter(e => e.montant < 0).reduce((s, e) => s + Math.abs(e.montant), 0);
+    const margeBrute = caEncaisse - totalDepenses;
+    const tauxMarge = caEncaisse > 0 ? Math.round((margeBrute / caEncaisse) * 100) : 0;
+
+    const clientsCA = {};
+    filtered.filter(e => e.type === 'contract').forEach(e => {
+      const contract = data.contracts.find(c => c.id === e.sourceId || c.id === e.contractId);
+      const nom = contract ? contract.client : (e.label || 'Inconnu');
+      clientsCA[nom] = (clientsCA[nom] || 0) + e.montant;
+    });
+    const topClient = Object.entries(clientsCA).sort((a, b) => b[1] - a[1])[0] || null;
+
+    // === BLOC 3 – Trésorerie ===
+    const totalEntrees = filtered.filter(e => e.montant > 0).reduce((s, e) => s + e.montant, 0);
+    const totalSorties = filtered.filter(e => e.montant < 0).reduce((s, e) => s + Math.abs(e.montant), 0);
+    const tresoReelle = totalEntrees - totalSorties;
+    const tresoProjetee = tresoReelle + resteTotal;
+    const apports = filtered.filter(e => e.type === 'apport').reduce((s, e) => s + e.montant, 0);
+    const mickaPay = filtered.filter(e => e.type==='contract'&&e.assignedTo==='Micka').reduce((s,e)=>s+e.montant,0);
+    const cesarPay = filtered.filter(e => e.type==='contract'&&e.assignedTo==='César').reduce((s,e)=>s+e.montant,0);
+    const mickaAdv = filtered.filter(e => e.type==='expense'&&e.auteur==='Micka').reduce((s,e)=>s+Math.abs(e.montant),0);
+    const cesarAdv = filtered.filter(e => e.type==='expense'&&e.auteur==='César').reduce((s,e)=>s+Math.abs(e.montant),0);
+    const mickaApports = filtered.filter(e => e.type==='apport'&&e.imputéÀ==='Micka').reduce((s,e)=>s+e.montant,0);
+    const cesarApports = filtered.filter(e => e.type==='apport'&&e.imputéÀ==='César').reduce((s,e)=>s+e.montant,0);
+    const mickaBank = filtered.filter(e => e.type==='bank'&&e.imputéÀ==='Micka').reduce((s,e)=>s+e.montant,0);
+    const cesarBank = filtered.filter(e => e.type==='bank'&&e.imputéÀ==='César').reduce((s,e)=>s+e.montant,0);
+    const netMicka = mickaPay - mickaAdv - mickaApports + mickaBank;
+    const netCesar = cesarPay - cesarAdv - cesarApports + cesarBank;
+    const ecartDuo = Math.abs(netMicka - netCesar);
+
+    // === BLOC 4 – Opérations ===
+    const contratsEnCours = data.contracts.filter(c => c.statut === 'En cours').length;
+    const today = new Date();
+    const tachesEnRetard = data.tasks.filter(t => t.statut !== 'Terminé' && t.echeance && new Date(t.echeance + 'T23:59:59') < today).length;
+    const dossiersUrgents = data.contracts.filter(c => {
+      if(c.statut !== 'En cours' || !c.dateFin) return false;
+      const diff = (new Date(c.dateFin + 'T00:00:00') - today) / (1000*60*60*24);
+      return diff >= 0 && diff <= 30;
+    }).length;
+    const delais = nonAnnule.filter(c => c.payments && c.payments.length > 0 && c.dateDebut).map(c => {
+      const d0 = new Date(c.dateDebut + 'T00:00:00');
+      const sorted = [...c.payments].sort((a,b) => new Date(a.date) - new Date(b.date));
+      return (new Date(sorted[0].date + 'T00:00:00') - d0) / (1000*60*60*24);
+    }).filter(d => d >= 0 && d < 365);
+    const delaiMoyen = delais.length > 0 ? Math.round(delais.reduce((s,d)=>s+d,0)/delais.length) : null;
+
+    // === BLOC 5 – Croissance ===
+    const nouveauxClients = data.clients.filter(cl => cl.etape === 'Client' && inPeriode(cl.dateEntree, range)).length;
+    const pipeline = data.clients.filter(cl => cl.etape !== 'Client').length;
+    const potentielPipeline = data.clients.filter(cl => cl.etape !== 'Client').reduce((s, cl) => s + (Number(cl.potentiel)||0), 0);
+    const top3 = Object.entries(clientsCA).sort((a,b) => b[1]-a[1]).slice(0, 3);
+
+    let prevRange = null;
+    if(range) {
+      const dur = range.end.getTime() - range.start.getTime();
+      prevRange = {start: new Date(range.start.getTime() - dur - 1), end: new Date(range.start.getTime() - 1)};
+    }
+    const prevFiltered = prevRange ? entries.filter(e => inPeriode(e.date, prevRange)) : [];
+    const prevCaEncaisse = prevFiltered.filter(e => e.type === 'contract').reduce((s,e)=>s+e.montant,0);
+    const prevNbContrats = prevRange ? nonAnnule.filter(c => inPeriode(c.dateDebut, prevRange)).length : 0;
+    const evolutionCA = prevCaEncaisse > 0 ? Math.round(((caEncaisse - prevCaEncaisse) / prevCaEncaisse) * 100) : null;
+    const evolutionContrats = prevNbContrats > 0 ? Math.round(((nbContrats - prevNbContrats) / prevNbContrats) * 100) : null;
+
+    return {
+      caSigne, caEncaisse, resteTotal, nbContrats, panierMoyen, tauxTransfo, nbClients, totalCRM,
+      totalDepenses, margeBrute, tauxMarge, topClient,
+      tresoReelle, tresoProjetee, apports, ecartDuo, netMicka, netCesar,
+      contratsEnCours, tachesEnRetard, dossiersUrgents, delaiMoyen,
+      nouveauxClients, pipeline, potentielPipeline, top3, evolutionCA, evolutionContrats,
+    };
+  }, [data, periodeId, dateDebut, dateFin]);
+
+  const fmt = (n) => new Intl.NumberFormat('fr-FR', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(n||0);
+  const fmtPct = (n) => n === null ? '—' : `${n > 0 ? '+' : ''}${n}%`;
+
+  const Section = ({icon, title, subtitle, children}) => (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <div className="flex items-center gap-3 mb-5">
+        <span className="text-2xl">{icon}</span>
+        <div>
+          <h2 className="text-base font-semibold text-gray-800">{title}</h2>
+          {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+
+  const KpiBox = ({label, value, sub, color='gray'}) => {
+    const cls = {
+      blue:'bg-blue-50 text-blue-700 border-blue-100',
+      green:'bg-green-50 text-green-700 border-green-100',
+      amber:'bg-amber-50 text-amber-700 border-amber-100',
+      red:'bg-red-50 text-red-700 border-red-100',
+      purple:'bg-purple-50 text-purple-700 border-purple-100',
+      indigo:'bg-indigo-50 text-indigo-700 border-indigo-100',
+      emerald:'bg-emerald-50 text-emerald-700 border-emerald-100',
+      gray:'bg-gray-50 text-gray-700 border-gray-100',
+    };
+    return (
+      <div className={`rounded-xl border p-4 ${cls[color]||cls.gray}`}>
+        <div className="text-xs font-medium opacity-60 mb-1 leading-tight">{label}</div>
+        <div className="text-xl font-bold leading-tight">{value}</div>
+        {sub && <div className="text-xs opacity-50 mt-1 leading-tight">{sub}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-gray-800">Vue Dirigeant</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Indicateurs stratégiques de pilotage</p>
+        </div>
+        <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
+      </div>
+
+      <Section icon="📦" title="Activité commerciale" subtitle="Business généré sur la période">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+          <KpiBox label="CA signé" value={fmt(stats.caSigne)} color="blue"/>
+          <KpiBox label="CA encaissé" value={fmt(stats.caEncaisse)} color="green"/>
+          <KpiBox label="Reste à encaisser" value={fmt(stats.resteTotal)} color="amber"/>
+          <KpiBox label="Contrats signés" value={stats.nbContrats} color="indigo"/>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <KpiBox label="Panier moyen" value={fmt(stats.panierMoyen)} sub={`sur ${stats.nbContrats} contrat${stats.nbContrats !== 1 ? 's' : ''}`} color="purple"/>
+          <KpiBox label="Taux de transformation CRM" value={`${stats.tauxTransfo}%`} sub={`${stats.nbClients} clients / ${stats.totalCRM} contacts CRM`} color="blue"/>
+        </div>
+      </Section>
+
+      <Section icon="📈" title="Rentabilité" subtitle="Est-ce que l'activité génère de la valeur réelle ?">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KpiBox label="Dépenses totales" value={fmt(stats.totalDepenses)} color="red"/>
+          <KpiBox label="Marge brute" value={fmt(stats.margeBrute)} color={stats.margeBrute >= 0 ? 'green' : 'red'}/>
+          <KpiBox label="Taux de marge" value={`${stats.tauxMarge}%`} color={stats.tauxMarge >= 50 ? 'green' : stats.tauxMarge >= 20 ? 'amber' : 'red'}/>
+          <KpiBox label="Top client" value={stats.topClient ? stats.topClient[0] : '—'} sub={stats.topClient ? fmt(stats.topClient[1]) : 'Aucun encaissement'} color="indigo"/>
+        </div>
+      </Section>
+
+      <Section icon="💰" title="Trésorerie" subtitle="Vue synthétique — détail complet dans l'onglet Trésorerie">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KpiBox label="Trésorerie réelle" value={fmt(stats.tresoReelle)} color={stats.tresoReelle >= 0 ? 'green' : 'red'}/>
+          <KpiBox label="Trésorerie projetée" value={fmt(stats.tresoProjetee)} color={stats.tresoProjetee >= 0 ? 'blue' : 'amber'}/>
+          <KpiBox label="Apports (période)" value={fmt(stats.apports)} color="purple"/>
+          <KpiBox label="Écart duo" value={fmt(stats.ecartDuo)} sub={`Micka ${fmt(stats.netMicka)} · César ${fmt(stats.netCesar)}`} color={stats.ecartDuo < 200 ? 'green' : 'amber'}/>
+        </div>
+      </Section>
+
+      <Section icon="⚙️" title="Opérations" subtitle="Est-ce que l'activité tourne bien au quotidien ?">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <KpiBox label="Contrats en cours" value={stats.contratsEnCours} color="blue"/>
+          <KpiBox label="Tâches en retard" value={stats.tachesEnRetard} color={stats.tachesEnRetard === 0 ? 'green' : stats.tachesEnRetard <= 3 ? 'amber' : 'red'}/>
+          <KpiBox label="Dossiers urgents" value={stats.dossiersUrgents} sub="Fin dans ≤ 30 jours" color={stats.dossiersUrgents === 0 ? 'gray' : 'amber'}/>
+          <KpiBox label="Délai moyen encaissement" value={stats.delaiMoyen !== null ? `${stats.delaiMoyen}j` : '—'} sub="Signature → 1er paiement" color="indigo"/>
+        </div>
+      </Section>
+
+      <Section icon="🚀" title="Croissance" subtitle="Est-ce que l'activité prépare l'avenir ?">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <KpiBox label="Nouveaux clients" value={stats.nouveauxClients} sub="Passés en statut Client" color="green"/>
+          <KpiBox label="Pipeline prospects" value={stats.pipeline} sub={`Potentiel ${fmt(stats.potentielPipeline)}`} color="purple"/>
+          <KpiBox label="Évolution CA" value={fmtPct(stats.evolutionCA)} sub="vs période précédente" color={stats.evolutionCA === null ? 'gray' : stats.evolutionCA >= 0 ? 'green' : 'red'}/>
+          <KpiBox label="Évolution contrats" value={fmtPct(stats.evolutionContrats)} sub="vs période précédente" color={stats.evolutionContrats === null ? 'gray' : stats.evolutionContrats >= 0 ? 'green' : 'red'}/>
+        </div>
+        {stats.top3.length > 0 && (
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Top clients (période)</div>
+            <div className="flex flex-wrap gap-2">
+              {stats.top3.map(([name, ca], i) => (
+                <div key={name} className="flex items-center gap-2 bg-gray-50 rounded-xl px-4 py-2 border border-gray-100">
+                  <span className="text-xs font-bold text-gray-300">#{i+1}</span>
+                  <span className="text-sm font-medium text-gray-700">{name}</span>
+                  <span className="text-sm font-bold text-green-600">{fmt(ca)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN APP
 // ============================================================
 const NAV_ITEMS = [
   {id:'dashboard', label:'Dashboard', icon:'📊'},
+  {id:'pilotage', label:'Pilotage', icon:'🎯'},
   {id:'analytics', label:'Analytics', icon:'📈'},
   {id:'tresorerie', label:'Trésorerie', icon:'💰'},
   {id:'quotes', label:'Devis', icon:'📋'},
@@ -3953,6 +4170,7 @@ function App() {
     const wrap = (component) => <ErrorBoundary key={activeModule}>{component}</ErrorBoundary>;
     switch(activeModule) {
       case 'dashboard': return wrap(<Dashboard data={data} onNavigate={onNavigate}/>);
+      case 'pilotage': return wrap(<PilotageModule data={data}/>);
       case 'analytics': return wrap(<AnalyticsModule data={data}/>);
       case 'quotes': return wrap(<QuotesModule data={data} setData={setData} onNavigate={onNavigate}/>);
       case 'invoices': return wrap(<InvoicesModule data={data} setData={setData}/>);
