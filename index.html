@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>EntrepreneurPRO V18</title>
+<title>EntrepreneurPRO V19</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -27,7 +27,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = "V18 – CRM+, Trésorerie, Filtres & UX ☁️";
+const APP_VERSION = "V19 – Cohérence données, filtres par défaut & Contrats +";
 const SCHEMA_VERSION = 3;
 const LS_KEY = "entrepreneurpro_v14_data";
 
@@ -1829,6 +1829,9 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
 function ContractsModule({data, setData, deepLink, clearDeepLink}) {
   const addToast = useToast();
   const [statusFilter, setStatusFilter] = React.useState('Tous');
+  const [paymentStatusFilter, setPaymentStatusFilter] = React.useState('Tous');
+  const [assigneeFilter, setAssigneeFilter] = React.useState('Tous');
+  const [paymentTypeFilter, setPaymentTypeFilter] = React.useState('Tous');
   const [search, setSearch] = React.useState('');
   const [periodeId, setPeriodeId] = React.useState('tout');
   const [dateDebut, setDateDebut] = React.useState('');
@@ -1874,6 +1877,12 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
     return data.contracts.filter(c => {
       if(statusFilter !== 'Tous' && c.statut !== statusFilter) return false;
       if(periodeId !== 'tout' && !inPeriode(c.dateSignature||c.dateDebut||'', periodeRange)) return false;
+      if(assigneeFilter !== 'Tous' && c.assignedTo !== assigneeFilter) return false;
+      if(paymentTypeFilter !== 'Tous' && (c.typePaiement||'') !== paymentTypeFilter) return false;
+      if(paymentStatusFilter !== 'Tous') {
+        const ps = calcPaymentStatus(Number(c.montant)||0, c.payments);
+        if(ps !== paymentStatusFilter) return false;
+      }
       if(search) {
         const q = normalize(search);
         if(!normalize(c.client).includes(q) && !normalize(c.prestation).includes(q)) return false;
@@ -1884,9 +1893,11 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
       if(sortKey==='montant') return mult*(Number(a.montant||0)-Number(b.montant||0));
       if(sortKey==='client') return mult*a.client.localeCompare(b.client);
       if(sortKey==='dateSignature') return mult*(new Date(a.dateSignature||a.dateDebut||0)-new Date(b.dateSignature||b.dateDebut||0));
+      if(sortKey==='dateDebut') return mult*(new Date(a.dateDebut||0)-new Date(b.dateDebut||0));
+      if(sortKey==='dateFin') return mult*(new Date(a.dateFin||0)-new Date(b.dateFin||0));
       return 0;
     });
-  }, [data.contracts, statusFilter, search, sortKey, sortDir]);
+  }, [data.contracts, statusFilter, search, sortKey, sortDir, periodeId, periodeRange, paymentStatusFilter, assigneeFilter, paymentTypeFilter]);
 
   const totals = React.useMemo(() => {
     const nonAnnule = filtered.filter(c => c.statut !== 'Annulé');
@@ -1934,11 +1945,14 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
 
       {/* Filters */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+        {/* Ligne 1 : Période */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-semibold text-gray-500">Période :</span>
+          <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Période :</span>
           <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
         </div>
+        {/* Ligne 2 : Statut contrat + statut paiement */}
         <div className="flex flex-wrap gap-3 items-center">
+          <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Statut :</span>
           <div className="flex gap-1 flex-wrap">
             {['Tous', ...CONTRACT_STATUSES].map(s => (
               <button key={s} onClick={()=>setStatusFilter(s)}
@@ -1947,7 +1961,52 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
               </button>
             ))}
           </div>
+        </div>
+        {/* Ligne 3 : Statut paiement */}
+        <div className="flex flex-wrap gap-3 items-center">
+          <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Paiement :</span>
+          <div className="flex gap-1 flex-wrap">
+            {['Tous', 'Non payé', 'Partiel', 'Payé'].map(s => (
+              <button key={s} onClick={()=>setPaymentStatusFilter(s)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${paymentStatusFilter===s ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Ligne 4 : Attribution */}
+        <div className="flex flex-wrap gap-3 items-center">
+          <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Attribution :</span>
+          <div className="flex gap-1 flex-wrap">
+            {['Tous', ...ASSIGNEES_AVEC_DEUX].map(s => (
+              <button key={s} onClick={()=>setAssigneeFilter(s)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${assigneeFilter===s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Ligne 5 : Type de paiement */}
+        <div className="flex flex-wrap gap-3 items-center">
+          <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Type paie. :</span>
+          <div className="flex gap-1 flex-wrap">
+            {['Tous', ...PAYMENT_TYPES].map(s => (
+              <button key={s} onClick={()=>setPaymentTypeFilter(s)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${paymentTypeFilter===s ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Ligne 6 : Recherche + reset */}
+        <div className="flex flex-wrap gap-2 items-center">
           <input className={`${inputCls} max-w-xs`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher client, prestation..."/>
+          {(statusFilter!=='Tous'||paymentStatusFilter!=='Tous'||assigneeFilter!=='Tous'||paymentTypeFilter!=='Tous'||search) && (
+            <button onClick={()=>{setStatusFilter('Tous');setPaymentStatusFilter('Tous');setAssigneeFilter('Tous');setPaymentTypeFilter('Tous');setSearch('');}}
+              className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-full transition-colors">
+              ✕ Réinitialiser les filtres
+            </button>
+          )}
         </div>
       </div>
 
@@ -1965,7 +2024,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                {[{label:'Client',key:'client'},{label:'Prestation',key:null},{label:'Montant',key:'montant'},{label:'Attribué',key:null},{label:'Statut',key:null},{label:'Paiement',key:null},{label:'Type paie.',key:null},{label:'Signature',key:'dateSignature'},{label:'',key:null}].map(h=>(
+                {[{label:'Client',key:'client'},{label:'Prestation',key:null},{label:'Montant',key:'montant'},{label:'Attribué',key:null},{label:'Statut',key:null},{label:'Paiement',key:null},{label:'Type paie.',key:null},{label:'Signature',key:'dateSignature'},{label:'Début',key:'dateDebut'},{label:'Fin',key:'dateFin'},{label:'',key:null}].map(h=>(
                   <th key={h.label} onClick={h.key?()=>handleSort(h.key):undefined} className={`text-left text-xs font-semibold text-gray-500 px-4 py-3 ${h.key?'cursor-pointer hover:text-gray-800 select-none':''}`}>
                     {h.label}{h.key&&sortKey===h.key?(sortDir==='asc'?' ↑':' ↓'):''}
                   </th>
@@ -1991,6 +2050,8 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                       {isOPCO && c.statutOPCO && <span className="ml-1"><StatusBadge status={c.statutOPCO}/></span>}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{c.dateSignature ? formatDate(c.dateSignature) : '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{c.dateDebut ? formatDate(c.dateDebut) : '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{c.dateFin ? formatDate(c.dateFin) : '—'}</td>
                     <td className="px-4 py-3"><button className="text-blue-500 hover:text-blue-700 text-xs font-medium">Ouvrir →</button></td>
                   </tr>
                 );
@@ -2011,6 +2072,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                     <div className="font-semibold text-gray-800">{c.client}</div>
                     <div className="text-xs text-gray-500 mt-0.5">{c.prestation}</div>
                     {c.dateSignature && <div className="text-xs text-gray-400 mt-0.5">Signé le {formatDate(c.dateSignature)}</div>}
+                    {(c.dateDebut||c.dateFin) && <div className="text-xs text-gray-400 mt-0.5">{c.dateDebut?formatDate(c.dateDebut):''}{c.dateDebut&&c.dateFin?' → ':''}{c.dateFin?formatDate(c.dateFin):''}</div>}
                   </div>
                   <div className="text-base font-bold text-blue-700">{fmt(c.montant)}</div>
                 </div>
@@ -2995,7 +3057,7 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
 // LEDGER MODULE (Grand Livre Unifié)
 // ============================================================
 function LedgerModule({data, onNavigate}) {
-  const [periodeId, setPeriodeId] = React.useState('mois');
+  const [periodeId, setPeriodeId] = React.useState('tout');
   const [dateDebut, setDateDebut] = React.useState('');
   const [dateFin, setDateFin] = React.useState('');
   const [typeFilter, setTypeFilter] = React.useState('Tous');
@@ -3272,7 +3334,7 @@ function DriveModule({data, setData}) {
 // TRÉSORERIE MODULE
 // ============================================================
 function TresorerieModule({data}) {
-  const [periodeId, setPeriodeId] = React.useState(`y${new Date().getFullYear()}`);
+  const [periodeId, setPeriodeId] = React.useState('tout');
   const [dateDebut, setDateDebut] = React.useState('');
   const [dateFin, setDateFin] = React.useState('');
 
@@ -3546,7 +3608,7 @@ function ChartCanvas({type, data, options}) {
 
 function AnalyticsModule({data}) {
   const now = new Date();
-  const [periodeId, setPeriodeId] = React.useState(`y${now.getFullYear()}`);
+  const [periodeId, setPeriodeId] = React.useState('tout');
   const [dateDebut, setDateDebut] = React.useState('');
   const [dateFin, setDateFin] = React.useState('');
 
@@ -3731,7 +3793,7 @@ function AnalyticsModule({data}) {
 // PILOTAGE MODULE
 // ============================================================
 function PilotageModule({data}) {
-  const [periodeId, setPeriodeId] = React.useState('annee');
+  const [periodeId, setPeriodeId] = React.useState('tout');
   const [dateDebut, setDateDebut] = React.useState('');
   const [dateFin, setDateFin] = React.useState('');
 
