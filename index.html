@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>EntrepreneurPRO V19</title>
+<title>EntrepreneurPRO V20</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -27,7 +27,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = "V19 – Cohérence données, filtres par défaut & Contrats +";
+const APP_VERSION = "V20 – UX : nav intégrée, filtres collapsibles & headers";
 const SCHEMA_VERSION = 3;
 const LS_KEY = "entrepreneurpro_v14_data";
 
@@ -1250,7 +1250,7 @@ function QuotesModule({data, setData, onNavigate}) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-end justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Devis</h1>
         <Btn variant="primary" onClick={()=>{setSelected(null);setModalOpen(true);}}>+ Nouveau devis</Btn>
       </div>
@@ -1438,7 +1438,7 @@ function InvoicesModule({data, setData}) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-end justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Facturation</h1>
         <Btn variant="primary" onClick={()=>{setSelected(null);setModalOpen(true);}}>+ Nouvelle facture</Btn>
       </div>
@@ -1836,6 +1836,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
   const [periodeId, setPeriodeId] = React.useState('tout');
   const [dateDebut, setDateDebut] = React.useState('');
   const [dateFin, setDateFin] = React.useState('');
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [selectedContract, setSelectedContract] = React.useState(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [modalTab, setModalTab] = React.useState('infos');
@@ -1935,7 +1936,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-end justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Contrats</h1>
         <div className="flex gap-2">
           <Btn variant="outline" size="sm" onClick={handleExportCSV}>⬇️ CSV</Btn>
@@ -1944,71 +1945,85 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
-        {/* Ligne 1 : Période */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Période :</span>
-          <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
-        </div>
-        {/* Ligne 2 : Statut contrat + statut paiement */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Statut :</span>
-          <div className="flex gap-1 flex-wrap">
-            {['Tous', ...CONTRACT_STATUSES].map(s => (
-              <button key={s} onClick={()=>setStatusFilter(s)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {s}
+      {(() => {
+        const activeFilters = [
+          statusFilter!=='Tous' && {label:'Statut: '+statusFilter, reset:()=>setStatusFilter('Tous')},
+          paymentStatusFilter!=='Tous' && {label:'Paiement: '+paymentStatusFilter, reset:()=>setPaymentStatusFilter('Tous')},
+          assigneeFilter!=='Tous' && {label:'Attribution: '+assigneeFilter, reset:()=>setAssigneeFilter('Tous')},
+          paymentTypeFilter!=='Tous' && {label:'Type: '+paymentTypeFilter, reset:()=>setPaymentTypeFilter('Tous')},
+          periodeId!=='tout' && {label:'Période: '+(PERIOD_SHORTCUTS.find(s=>s.id===periodeId)?.label||periodeId), reset:()=>{setPeriodeId('tout');setDateDebut('');setDateFin('');}},
+        ].filter(Boolean);
+        const hasFilters = activeFilters.length > 0 || !!search;
+        const resetAll = () => { setStatusFilter('Tous');setPaymentStatusFilter('Tous');setAssigneeFilter('Tous');setPaymentTypeFilter('Tous');setSearch('');setPeriodeId('tout');setDateDebut('');setDateFin(''); };
+        return (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+            {/* Barre de contrôle toujours visible */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={()=>setFiltersOpen(v=>!v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${filtersOpen ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                🔧 Filtres {activeFilters.length>0 && <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${filtersOpen?'bg-white text-blue-600':'bg-blue-600 text-white'}`}>{activeFilters.length}</span>}
+                <span className="ml-1">{filtersOpen?'▲':'▼'}</span>
               </button>
-            ))}
+              <input className={`${inputCls} w-56`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher client, prestation..."/>
+              {hasFilters && (
+                <button onClick={resetAll} className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors">✕ Reset</button>
+              )}
+              {/* Chips des filtres actifs (panneau fermé) */}
+              {!filtersOpen && activeFilters.map((f,i) => (
+                <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
+                  {f.label}
+                  <button onClick={f.reset} className="ml-0.5 text-blue-400 hover:text-blue-700 font-bold leading-none">×</button>
+                </span>
+              ))}
+            </div>
+            {/* Panneau de filtres (collapsible) */}
+            {filtersOpen && (<>
+              <div className="pt-1 border-t border-gray-50 space-y-3">
+                <div className="flex flex-wrap gap-3 items-center">
+                  <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Période :</span>
+                  <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
+                </div>
+                <div className="flex flex-wrap gap-3 items-center">
+                  <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Statut :</span>
+                  <div className="flex gap-1 flex-wrap">
+                    {['Tous', ...CONTRACT_STATUSES].map(s => (
+                      <button key={s} onClick={()=>setStatusFilter(s)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3 items-center">
+                  <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Paiement :</span>
+                  <div className="flex gap-1 flex-wrap">
+                    {['Tous','Non payé','Partiel','Payé'].map(s => (
+                      <button key={s} onClick={()=>setPaymentStatusFilter(s)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${paymentStatusFilter===s ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3 items-center">
+                  <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Attribution :</span>
+                  <div className="flex gap-1 flex-wrap">
+                    {['Tous',...ASSIGNEES_AVEC_DEUX].map(s => (
+                      <button key={s} onClick={()=>setAssigneeFilter(s)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${assigneeFilter===s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3 items-center">
+                  <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Type paie. :</span>
+                  <div className="flex gap-1 flex-wrap">
+                    {['Tous',...PAYMENT_TYPES].map(s => (
+                      <button key={s} onClick={()=>setPaymentTypeFilter(s)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${paymentTypeFilter===s ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>)}
           </div>
-        </div>
-        {/* Ligne 3 : Statut paiement */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Paiement :</span>
-          <div className="flex gap-1 flex-wrap">
-            {['Tous', 'Non payé', 'Partiel', 'Payé'].map(s => (
-              <button key={s} onClick={()=>setPaymentStatusFilter(s)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${paymentStatusFilter===s ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-        {/* Ligne 4 : Attribution */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Attribution :</span>
-          <div className="flex gap-1 flex-wrap">
-            {['Tous', ...ASSIGNEES_AVEC_DEUX].map(s => (
-              <button key={s} onClick={()=>setAssigneeFilter(s)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${assigneeFilter===s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-        {/* Ligne 5 : Type de paiement */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <span className="text-xs font-semibold text-gray-500 w-24 shrink-0">Type paie. :</span>
-          <div className="flex gap-1 flex-wrap">
-            {['Tous', ...PAYMENT_TYPES].map(s => (
-              <button key={s} onClick={()=>setPaymentTypeFilter(s)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${paymentTypeFilter===s ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-        {/* Ligne 6 : Recherche + reset */}
-        <div className="flex flex-wrap gap-2 items-center">
-          <input className={`${inputCls} max-w-xs`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher client, prestation..."/>
-          {(statusFilter!=='Tous'||paymentStatusFilter!=='Tous'||assigneeFilter!=='Tous'||paymentTypeFilter!=='Tous'||search) && (
-            <button onClick={()=>{setStatusFilter('Tous');setPaymentStatusFilter('Tous');setAssigneeFilter('Tous');setPaymentTypeFilter('Tous');setSearch('');}}
-              className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-full transition-colors">
-              ✕ Réinitialiser les filtres
-            </button>
-          )}
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Totals */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -2024,8 +2039,8 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                {[{label:'Client',key:'client'},{label:'Prestation',key:null},{label:'Montant',key:'montant'},{label:'Attribué',key:null},{label:'Statut',key:null},{label:'Paiement',key:null},{label:'Type paie.',key:null},{label:'Signature',key:'dateSignature'},{label:'Début',key:'dateDebut'},{label:'Fin',key:'dateFin'},{label:'',key:null}].map(h=>(
-                  <th key={h.label} onClick={h.key?()=>handleSort(h.key):undefined} className={`text-left text-xs font-semibold text-gray-500 px-4 py-3 ${h.key?'cursor-pointer hover:text-gray-800 select-none':''}`}>
+                {[{label:'Client',key:'client',cls:''},{label:'Prestation',key:null,cls:''},{label:'Montant',key:'montant',cls:''},{label:'Attribué',key:null,cls:''},{label:'Statut',key:null,cls:''},{label:'Paiement',key:null,cls:''},{label:'Type paie.',key:null,cls:''},{label:'Signature',key:'dateSignature',cls:''},{label:'Début',key:'dateDebut',cls:'hidden xl:table-cell'},{label:'Fin',key:'dateFin',cls:'hidden xl:table-cell'},{label:'',key:null,cls:''}].map(h=>(
+                  <th key={h.label} onClick={h.key?()=>handleSort(h.key):undefined} className={`text-left text-xs font-semibold text-gray-500 px-4 py-3 ${h.key?'cursor-pointer hover:text-gray-800 select-none':''} ${h.cls}`}>
                     {h.label}{h.key&&sortKey===h.key?(sortDir==='asc'?' ↑':' ↓'):''}
                   </th>
                 ))}
@@ -2050,8 +2065,8 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                       {isOPCO && c.statutOPCO && <span className="ml-1"><StatusBadge status={c.statutOPCO}/></span>}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{c.dateSignature ? formatDate(c.dateSignature) : '—'}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{c.dateDebut ? formatDate(c.dateDebut) : '—'}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{c.dateFin ? formatDate(c.dateFin) : '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500 hidden xl:table-cell">{c.dateDebut ? formatDate(c.dateDebut) : '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500 hidden xl:table-cell">{c.dateFin ? formatDate(c.dateFin) : '—'}</td>
                     <td className="px-4 py-3"><button className="text-blue-500 hover:text-blue-700 text-xs font-medium">Ouvrir →</button></td>
                   </tr>
                 );
@@ -2297,7 +2312,7 @@ function CRMModule({data, setData, onNavigate}) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-end justify-between">
         <h1 className="text-2xl font-bold text-gray-800">CRM</h1>
         <div className="flex gap-2">
           <div className="flex bg-gray-100 rounded-lg p-1">
@@ -2557,7 +2572,7 @@ function TasksModule({data, setData}) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-end justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Tâches</h1>
         <Btn variant="primary" onClick={()=>{setSelectedTask(null);setModalOpen(true);}}>+ Nouvelle tâche</Btn>
       </div>
@@ -4298,7 +4313,7 @@ const NAV_ITEMS = [
   {id:'resources', label:'Drive & Liens', icon:'🔗'},
 ];
 
-function Sidebar({active, onChange, onExport, onImport, version, sidebarOpen, setSidebarOpen, syncStatus}) {
+function Sidebar({active, onChange, onExport, onImport, version, sidebarOpen, setSidebarOpen, syncStatus, onSearch, onAlerts, alertCount}) {
   const fileRef = React.useRef();
   const dragNavItem = React.useRef(null);
 
@@ -4349,9 +4364,17 @@ function Sidebar({active, onChange, onExport, onImport, version, sidebarOpen, se
 
   const content = (
     <div className="flex flex-col h-full">
-      <div className="px-5 py-5 border-b border-gray-100">
+      <div className="px-5 pt-5 pb-3 border-b border-gray-100">
         <div className="text-lg font-bold text-gray-800 leading-tight">EntrepreneurPRO</div>
-        <div className="text-xs text-gray-400 mt-0.5">{version}</div>
+        <div className="text-xs text-gray-400 mt-0.5 mb-3">{version}</div>
+        <div className="flex gap-2">
+          <button onClick={onSearch} className="flex-1 flex items-center gap-1.5 px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-xl text-xs text-gray-500 transition-colors">
+            🔍 <span>Rechercher</span><span className="ml-auto text-gray-300 font-mono">⌘K</span>
+          </button>
+          <button onClick={onAlerts} className="relative px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-xl text-sm transition-colors">
+            🔔{alertCount>0&&<span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold leading-none">{alertCount}</span>}
+          </button>
+        </div>
       </div>
       <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-0.5">
         {orderedItems.map(item => {
@@ -4544,6 +4567,9 @@ function App() {
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
         syncStatus={syncStatus}
+        onSearch={()=>setShowSearch(v=>!v)}
+        onAlerts={()=>setShowAlerts(v=>!v)}
+        alertCount={alerts.length}
       />
       {/* Mobile top bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-20 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 shadow-sm">
@@ -4555,15 +4581,6 @@ function App() {
             🔔{alerts.length>0&&<span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">{alerts.length}</span>}
           </button>
         </div>
-      </div>
-      {/* Desktop alert bell (in main area top right) */}
-      <div className="hidden md:flex fixed top-3 right-4 z-30 items-center gap-2">
-        <button onClick={()=>setShowSearch(v=>!v)} className="text-gray-400 hover:text-gray-700 text-sm bg-white border border-gray-200 px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5">
-          🔍 <span className="text-xs text-gray-500">Cmd+K</span>
-        </button>
-        <button onClick={()=>setShowAlerts(v=>!v)} className="relative text-gray-400 hover:text-gray-700 bg-white border border-gray-200 px-3 py-1.5 rounded-lg shadow-sm text-sm">
-          🔔{alerts.length>0&&<span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold">{alerts.length}</span>}
-        </button>
       </div>
       {/* Main content */}
       <main className="md:ml-60 pt-0 md:pt-0">
