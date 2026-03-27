@@ -27,7 +27,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = "V21 – Sécurisation données & protection anti-écrasement";
+const APP_VERSION = "V21.1 – Fiabilisation sync & verrouillage anti-corruption";
 const SCHEMA_VERSION = 3;
 const LS_KEY = "entrepreneurpro_v14_data";
 
@@ -263,14 +263,25 @@ const INITIAL_DATA = {
   }
 };
 
-// IDs et noms de l'ancien jeu de démo — bloqués définitivement en production
+// IDs, noms et titres de l'ancien jeu de démo — bloqués définitivement en production
 const DEMO_FINGERPRINTS = {
-  ids: new Set(['cl001','cl002','cl003','c001','c002','t001','t002','sub001','sub002','sub003','p001','a001']),
-  names: ['TechCorp','StartupXYZ','BioMed Paris']
+  ids: new Set(['cl001','cl002','cl003','c001','c002','t001','t002','sub001','sub002','sub003','p001','a001','q001','q002','i001','i002']),
+  names: ['TechCorp','StartupXYZ','BioMed Paris'],
+  taskTitles: new Set(['Préparer devis TechCorp v2','Appel de suivi StartupXYZ'])
 };
 
-// Taille du dernier jeu de données distant connu (pour détecter les régressions)
-let lastRemoteDataSize = 0;
+// Taille du dernier jeu de données distant connu — persistée entre sessions (R4)
+const LS_REMOTE_SIZE_KEY = 'entrepreneurpro_remote_size';
+let lastRemoteDataSize = (() => {
+  try { return Math.max(0, parseInt(localStorage.getItem(LS_REMOTE_SIZE_KEY)||'0', 10)||0); } catch(e) { return 0; }
+})();
+function persistRemoteSize(size) {
+  lastRemoteDataSize = size;
+  try { localStorage.setItem(LS_REMOTE_SIZE_KEY, String(size)); } catch(e) {}
+}
+
+// Callback global pour propager les changements de syncStatus depuis les fonctions module-level (R3/R8)
+let _onSyncStatusChange = null;
 
 // ============================================================
 // STORAGE
@@ -328,8 +339,13 @@ function isDemoData(d) {
     if(DEMO_FINGERPRINTS.ids.has(c.id)) return true;
     if(DEMO_FINGERPRINTS.names.includes(c.entreprise)) return true;
   }
-  for(const t of (d.tasks||[])) if(DEMO_FINGERPRINTS.ids.has(t.id)) return true;
+  for(const t of (d.tasks||[])) {
+    if(DEMO_FINGERPRINTS.ids.has(t.id)) return true;
+    if(DEMO_FINGERPRINTS.taskTitles.has(t.titre)) return true; // R11
+  }
   for(const s of (d.bank?.subscriptions||[])) if(DEMO_FINGERPRINTS.ids.has(s.id)) return true;
+  for(const q of (d.quotes||[])) if(DEMO_FINGERPRINTS.ids.has(q.id)) return true;   // R11
+  for(const i of (d.invoices||[])) if(DEMO_FINGERPRINTS.ids.has(i.id)) return true; // R11
   return false;
 }
 
@@ -351,7 +367,7 @@ function validateBeforeWrite(d) {
 
 // Sauvegarde locale versionnée (max 10 snapshots horodatés)
 const LS_BACKUP_KEY = 'entrepreneurpro_backups_v1';
-const MAX_BACKUPS = 10;
+const MAX_BACKUPS = 5; // R10 : réduit de 10 à 5 pour limiter le risque de saturation localStorage
 function saveLocalBackup(d) {
   try {
     const backups = JSON.parse(localStorage.getItem(LS_BACKUP_KEY) || '[]');
@@ -366,8 +382,10 @@ const LS_SYNC_LOG_KEY = 'entrepreneurpro_sync_log';
 const MAX_LOG = 100;
 function addSyncLog(action, detail) {
   try {
+    // R12 : capture automatique de la taille du stockage principal pour exploitabilité incident
+    const lsMainSize = (() => { try { return (localStorage.getItem(LS_KEY)||'').length; } catch(e) { return -1; } })();
     const log = JSON.parse(localStorage.getItem(LS_SYNC_LOG_KEY) || '[]');
-    log.unshift({ts: new Date().toISOString(), action, detail: String(detail||'')});
+    log.unshift({ts: new Date().toISOString(), action, detail: String(detail||''), lsMainSize, remoteKnownSize: lastRemoteDataSize});
     if(log.length > MAX_LOG) log.length = MAX_LOG;
     localStorage.setItem(LS_SYNC_LOG_KEY, JSON.stringify(log));
   } catch(e) {}
@@ -394,12 +412,16 @@ function saveData(d) {
     return;
   }
 
+  const size = JSON.stringify(d).length;
   sb.from('app_data').upsert({id:1, data:d, updated_at:new Date().toISOString()}).then(({error}) => {
     if(error) {
       console.error('[SAFE-SYNC] Supabase save error:', error);
       addSyncLog('WRITE_ERROR', error.message);
+      if(_onSyncStatusChange) _onSyncStatusChange('error'); // R3/R8 : propagation état réel
     } else {
-      addSyncLog('WRITE_OK', `size=${JSON.stringify(d).length}B`);
+      persistRemoteSize(size); // R4 : mise à jour de la taille distante connue
+      addSyncLog('WRITE_OK', `size=${size}B`);
+      if(_onSyncStatusChange) _onSyncStatusChange('ok'); // R3/R8 : confirmation connexion active
     }
   });
 }
@@ -419,15 +441,22 @@ function doImport(file, onSuccess, onError) {
   reader.onload = (e) => {
     try {
       const parsed = JSON.parse(e.target.result);
-      const required = ['contracts','clients','tasks','expenses','bank'];
+      // R9 : toutes les collections critiques sont requises (quotes + invoices ajoutés)
+      const required = ['contracts','clients','tasks','expenses','bank','quotes','invoices'];
       for(const k of required) {
-        if(!(k in parsed)) { onError('Fichier invalide: clé manquante ' + k); return; }
+        if(!(k in parsed)) { onError('Fichier invalide : clé manquante « ' + k + ' »'); return; }
       }
       delete parsed.passwords;
       parsed.schemaVersion = 3;
-      onSuccess(securizeData(parsed));
+      const secured = securizeData(parsed);
+      // R2 : blocage absolu des données de démo avant toute modification de l'état local
+      if(isDemoData(secured)) {
+        onError('Import bloqué : données de démonstration détectées dans le fichier');
+        return;
+      }
+      onSuccess(secured);
     } catch(err) {
-      onError('Erreur de parsing JSON: ' + err.message);
+      onError('Erreur de parsing JSON : ' + err.message);
     }
   };
   reader.readAsText(file);
@@ -4554,9 +4583,20 @@ function App() {
   }, []);
 
   // V21 – Initialisation manuelle : uniquement si la ligne Supabase est réellement absente
+  // R3/R8 : enregistrement du callback syncStatus dès le montage
+  React.useEffect(() => {
+    _onSyncStatusChange = (status) => setSyncStatus(status);
+    return () => { _onSyncStatusChange = null; };
+  }, []);
+
   const handleManualInit = React.useCallback(async (sourceLabel, dataToWrite) => {
     // Garde : jamais de données de démo
     if(isDemoData(dataToWrite)) {
+      addToast('Initialisation bloquée : données de démo détectées', 'error');
+      return;
+    }
+    // R7 : validateBeforeWrite sauf SIZE_REGRESSION (non pertinent pour init explicite)
+    if(isDemoData(dataToWrite)) { // redondant mais défensif
       addToast('Initialisation bloquée : données de démo détectées', 'error');
       return;
     }
@@ -4570,7 +4610,7 @@ function App() {
     try {
       const {error} = await sb.from('app_data').upsert({id:1, data:dataToWrite, updated_at:new Date().toISOString()});
       if(error) throw error;
-      lastRemoteDataSize = JSON.stringify(dataToWrite).length;
+      persistRemoteSize(JSON.stringify(dataToWrite).length); // R4 : persistance taille
       isRemoteUpdate.current = true;
       setData(dataToWrite);
       try { localStorage.setItem(LS_KEY, JSON.stringify(dataToWrite)); } catch(e) {}
@@ -4596,7 +4636,7 @@ function App() {
         if (!error && rows && rows.data) {
           // CAS OK : données distantes chargées avec succès
           const remote = securizeData(rows.data);
-          lastRemoteDataSize = JSON.stringify(remote).length;
+          persistRemoteSize(JSON.stringify(remote).length); // R4 : persistance taille distante
           isRemoteUpdate.current = true;
           setData(remote);
           try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
@@ -4623,18 +4663,25 @@ function App() {
       setSynced(true);
     })();
 
-    // Realtime — avec garde anti-démo et anti-régression
+    // Realtime — avec garde anti-démo, anti-régression taille (R5), et persistance (R4)
     channel = sb.channel('app_data_realtime')
       .on('postgres_changes', {event:'UPDATE', schema:'public', table:'app_data'}, (payload) => {
         if(!payload.new?.data) return;
         const incoming = securizeData(payload.new.data);
-        // V21 : bloquer les mises à jour realtime suspectes
+        // Blocage démo
         if(isDemoData(incoming)) {
-          console.error('[SAFE-SYNC] Mise à jour realtime bloquée : données de démo détectées');
+          console.error('[SAFE-SYNC] Realtime bloqué : données de démo détectées');
           addSyncLog('REALTIME_BLOCKED', 'demo data detected');
           return;
         }
-        lastRemoteDataSize = JSON.stringify(incoming).length;
+        // R5 : SIZE_REGRESSION sur les mises à jour entrantes realtime
+        const incomingSize = JSON.stringify(incoming).length;
+        if(lastRemoteDataSize > 5000 && incomingSize < lastRemoteDataSize * 0.4) {
+          console.error(`[SAFE-SYNC] Realtime bloqué : régression taille (${incomingSize}B << ${lastRemoteDataSize}B connus)`);
+          addSyncLog('REALTIME_SIZE_REGRESSION', `incoming=${incomingSize}B vs known=${lastRemoteDataSize}B`);
+          return;
+        }
+        persistRemoteSize(incomingSize); // R4 : mise à jour de la taille distante connue
         isRemoteUpdate.current = true;
         setData(incoming);
         try { localStorage.setItem(LS_KEY, JSON.stringify(incoming)); } catch(e) {}
@@ -4650,9 +4697,14 @@ function App() {
   // Sauvegarde Supabase à chaque changement (sauf mises à jour reçues du realtime)
   React.useEffect(() => {
     if(!synced) return;
+    // R1 : aucune écriture Supabase si la connexion distante n'est pas confirmée comme saine
+    // — 'empty' : ligne distante absente, l'utilisateur doit initier manuellement
+    // — 'error' : connexion échouée, pas d'écriture silencieuse
+    // — 'loading' : chargement en cours, attente
+    if(syncStatus !== 'ok') return;
     if(isRemoteUpdate.current) { isRemoteUpdate.current = false; return; }
     saveData(data);
-  }, [data, synced]);
+  }, [data, synced, syncStatus]);
 
   const onNavigate = (module, deepLinkData) => {
     setActiveModule(module);
