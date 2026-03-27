@@ -27,7 +27,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = "V20 – UX : nav intégrée, filtres collapsibles & headers";
+const APP_VERSION = "V21 – Sécurisation données & protection anti-écrasement";
 const SCHEMA_VERSION = 3;
 const LS_KEY = "entrepreneurpro_v14_data";
 
@@ -243,41 +243,34 @@ function buildLedgerEntries(data) {
 // ============================================================
 // INITIAL DATA
 // ============================================================
+// IMPORTANT V21: INITIAL_DATA ne contient plus aucune donnée de démo.
+// C'est une structure vide. Les données réelles viennent exclusivement de Supabase.
 const INITIAL_DATA = {
   schemaVersion: 3,
-  contracts: [
-    {id:"c001",clientId:"cl001",client:"TechCorp",prestation:"Développement Web React",montant:5000,assignedTo:"Micka",statut:"En cours",dateDebut:"2025-01-15",dateFin:"2025-03-28",notes:"Projet React prioritaire",payments:[],actions:[{id:"a001",date:"2025-01-15",type:"Email",titre:"Envoi devis",auteur:"Micka",notes:""}]},
-    {id:"c002",clientId:"cl002",client:"StartupXYZ",prestation:"Conseil Stratégie",montant:3000,assignedTo:"César",statut:"En cours",dateDebut:"2025-02-01",dateFin:"2025-04-15",notes:"",payments:[{id:"p001",date:"2025-02-15",montant:1500,note:"Acompte 50%",auteur:"Client"}],actions:[]}
-  ],
-  clients: [
-    {id:"cl001",entreprise:"TechCorp",nom:"Dupont",prenom:"Jean",email:"jean@techcorp.fr",telephone:"+33 6 12 34 56 78",source:"Réseaux sociaux",etape:"Client",potentiel:10000,notes:"Client fidèle",dateEntree:"2025-01-10",adresse:"",siret:""},
-    {id:"cl002",entreprise:"StartupXYZ",nom:"Martin",prenom:"Marie",email:"marie@startupxyz.com",telephone:"",source:"Réseautage",etape:"Négociation",potentiel:8000,notes:"",dateEntree:"2025-02-01",adresse:"",siret:""},
-    {id:"cl003",entreprise:"BioMed Paris",nom:"Blanc",prenom:"Paul",email:"paul@biomed.fr",telephone:"+33 1 42 00 11 22",source:"Recommandation",etape:"Devis",potentiel:15000,notes:"Grosse opportunité",dateEntree:"2025-02-15",adresse:"",siret:""}
-  ],
-  tasks: [
-    {id:"t001",titre:"Préparer devis TechCorp v2",client:"TechCorp",assignedTo:"Micka",statut:"À faire",priorite:"Haute",echeance:"2025-03-10",notes:""},
-    {id:"t002",titre:"Appel de suivi StartupXYZ",client:"StartupXYZ",assignedTo:"César",statut:"En cours",priorite:"Moyenne",echeance:"2025-03-05",notes:"Confirmer la deuxième phase"}
-  ],
+  contracts: [],
+  clients: [],
+  tasks: [],
   expenses: [],
   quotes: [],
   invoices: [],
-  bank: {
-    initialBalance: 2500,
-    transactions: [],
-    subscriptions: [
-      {id:"sub001",name:"Figma",amount:15,day:1,category:"Logiciels",active:true},
-      {id:"sub002",name:"GitHub Pro",amount:4,day:1,category:"Logiciels",active:true},
-      {id:"sub003",name:"Notion",amount:8,day:5,category:"Logiciels",active:true}
-    ]
-  },
+  bank: { initialBalance: 0, transactions: [], subscriptions: [] },
   config: {
-    driveLinks: {"Google Drive":"https://drive.google.com","Notion":"https://notion.so","Calendly":"https://calendly.com","Linear":"https://linear.app"},
+    driveLinks: {},
     objectives: {mickaCAAnnuel:0, cesarCAAnnuel:0},
     autoEntrepreneur: {seuil:77700, tauxURSSAF:22, assujeTVA:false},
     autoEntrepreneurMicka: {seuil:77700, tauxURSSAF:22},
     autoEntrepreneurCesar: {seuil:77700, tauxURSSAF:22}
   }
 };
+
+// IDs et noms de l'ancien jeu de démo — bloqués définitivement en production
+const DEMO_FINGERPRINTS = {
+  ids: new Set(['cl001','cl002','cl003','c001','c002','t001','t002','sub001','sub002','sub003','p001','a001']),
+  names: ['TechCorp','StartupXYZ','BioMed Paris']
+};
+
+// Taille du dernier jeu de données distant connu (pour détecter les régressions)
+let lastRemoteDataSize = 0;
 
 // ============================================================
 // STORAGE
@@ -311,18 +304,103 @@ function securizeData(d) {
 function loadData() {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if(!raw) return securizeData(JSON.parse(JSON.stringify(INITIAL_DATA)));
+    if(!raw) return securizeData({});  // V21: base vide structurée, jamais de données de démo
     const parsed = JSON.parse(raw);
     return securizeData(parsed);
   } catch(e) {
-    return securizeData(JSON.parse(JSON.stringify(INITIAL_DATA)));
+    console.warn('[SAFE-SYNC] localStorage corrompu, base locale vide utilisée');
+    return securizeData({});  // V21: jamais de fallback démo en cas d'erreur
   }
 }
 
+// ============================================================
+// V21 – SÉCURITÉ DES DONNÉES
+// ============================================================
+
+// Détecte si un dataset contient des empreintes de données de démo
+function isDemoData(d) {
+  if(!d) return false;
+  for(const c of (d.contracts||[])) {
+    if(DEMO_FINGERPRINTS.ids.has(c.id)) return true;
+    if(DEMO_FINGERPRINTS.names.includes(c.client)) return true;
+  }
+  for(const c of (d.clients||[])) {
+    if(DEMO_FINGERPRINTS.ids.has(c.id)) return true;
+    if(DEMO_FINGERPRINTS.names.includes(c.entreprise)) return true;
+  }
+  for(const t of (d.tasks||[])) if(DEMO_FINGERPRINTS.ids.has(t.id)) return true;
+  for(const s of (d.bank?.subscriptions||[])) if(DEMO_FINGERPRINTS.ids.has(s.id)) return true;
+  return false;
+}
+
+// Vérifie qu'une écriture est sûre avant tout upsert vers Supabase
+function validateBeforeWrite(d) {
+  // Blocage absolu : données de démo
+  if(isDemoData(d)) {
+    return {ok: false, reason: 'DEMO_DATA', msg: 'Écriture bloquée : données de démonstration détectées'};
+  }
+  // Blocage si régression de taille suspecte par rapport au dernier distant connu
+  if(lastRemoteDataSize > 5000) {
+    const localSize = JSON.stringify(d).length;
+    if(localSize < lastRemoteDataSize * 0.4) {
+      return {ok: false, reason: 'SIZE_REGRESSION', msg: `Écriture bloquée : dataset local (${localSize}B) beaucoup plus petit que le distant connu (${lastRemoteDataSize}B)`};
+    }
+  }
+  return {ok: true};
+}
+
+// Sauvegarde locale versionnée (max 10 snapshots horodatés)
+const LS_BACKUP_KEY = 'entrepreneurpro_backups_v1';
+const MAX_BACKUPS = 10;
+function saveLocalBackup(d) {
+  try {
+    const backups = JSON.parse(localStorage.getItem(LS_BACKUP_KEY) || '[]');
+    backups.unshift({ts: new Date().toISOString(), size: JSON.stringify(d).length, data: d});
+    if(backups.length > MAX_BACKUPS) backups.length = MAX_BACKUPS;
+    localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(backups));
+  } catch(e) { console.warn('[BACKUP] Snapshot local échoué:', e); }
+}
+
+// Journal de synchronisation (max 100 entrées)
+const LS_SYNC_LOG_KEY = 'entrepreneurpro_sync_log';
+const MAX_LOG = 100;
+function addSyncLog(action, detail) {
+  try {
+    const log = JSON.parse(localStorage.getItem(LS_SYNC_LOG_KEY) || '[]');
+    log.unshift({ts: new Date().toISOString(), action, detail: String(detail||'')});
+    if(log.length > MAX_LOG) log.length = MAX_LOG;
+    localStorage.setItem(LS_SYNC_LOG_KEY, JSON.stringify(log));
+  } catch(e) {}
+}
+
+// Récupère la liste des backups locaux (pour debug/restauration)
+function listLocalBackups() {
+  try { return JSON.parse(localStorage.getItem(LS_BACKUP_KEY) || '[]'); } catch(e) { return []; }
+}
+
+// ============================================================
+// FIN V21 – SÉCURITÉ
+// ============================================================
+
 function saveData(d) {
+  // Écriture locale systématique
   try { localStorage.setItem(LS_KEY, JSON.stringify(d)); } catch(e) {}
+
+  // V21 : validation obligatoire avant tout upsert distant
+  const validation = validateBeforeWrite(d);
+  if(!validation.ok) {
+    console.error('[SAFE-SYNC]', validation.msg);
+    addSyncLog('WRITE_BLOCKED', validation.reason);
+    return;
+  }
+
   sb.from('app_data').upsert({id:1, data:d, updated_at:new Date().toISOString()}).then(({error}) => {
-    if(error) console.error('Supabase save error:', error);
+    if(error) {
+      console.error('[SAFE-SYNC] Supabase save error:', error);
+      addSyncLog('WRITE_ERROR', error.message);
+    } else {
+      addSyncLog('WRITE_OK', `size=${JSON.stringify(d).length}B`);
+    }
   });
 }
 
@@ -4418,9 +4496,17 @@ function Sidebar({active, onChange, onExport, onImport, version, sidebarOpen, se
           <span>⬆️</span> Importer JSON
         </button>
         <input type="file" ref={fileRef} accept=".json" className="hidden" onChange={handleImportFile}/>
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs ${syncStatus==='ok'?'text-green-600':'text-red-500'}`}>
-          <span>{syncStatus==='ok'?'☁️':'⚠️'}</span>
-          {syncStatus==='ok' ? 'Supabase connecté' : 'Hors ligne'}
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium ${
+          syncStatus==='ok' ? 'text-green-600' :
+          syncStatus==='empty' ? 'text-amber-600' :
+          syncStatus==='loading' ? 'text-gray-400' :
+          'text-red-500'
+        }`}>
+          <span>{syncStatus==='ok'?'☁️':syncStatus==='empty'?'🟡':syncStatus==='loading'?'⏳':'⚠️'}</span>
+          {syncStatus==='ok' ? 'Supabase connecté' :
+           syncStatus==='empty' ? 'Base distante vide' :
+           syncStatus==='loading' ? 'Connexion...' :
+           'Erreur sync – mode local'}
         </div>
       </div>
     </div>
@@ -4448,7 +4534,8 @@ function App() {
   const [contractDeepLink, setContractDeepLink] = React.useState(null);
   const [bankDeepLink, setBankDeepLink] = React.useState(null);
   const [synced, setSynced] = React.useState(false);
-  const [syncStatus, setSyncStatus] = React.useState('loading'); // 'loading' | 'ok' | 'error'
+  const [syncStatus, setSyncStatus] = React.useState('loading'); // 'loading' | 'ok' | 'error' | 'empty'
+  const [manualInitBusy, setManualInitBusy] = React.useState(false);
   const [showSearch, setShowSearch] = React.useState(false);
   const [showAlerts, setShowAlerts] = React.useState(false);
   const isRemoteUpdate = React.useRef(false);
@@ -4466,38 +4553,93 @@ function App() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // V21 – Initialisation manuelle : uniquement si la ligne Supabase est réellement absente
+  const handleManualInit = React.useCallback(async (sourceLabel, dataToWrite) => {
+    // Garde : jamais de données de démo
+    if(isDemoData(dataToWrite)) {
+      addToast('Initialisation bloquée : données de démo détectées', 'error');
+      return;
+    }
+    const ok = window.confirm(
+      `Initialiser la base Supabase avec les données ${sourceLabel} ?\n\n` +
+      `Contenu : ${(dataToWrite.contracts||[]).length} contrats, ${(dataToWrite.clients||[]).length} clients, ${(dataToWrite.tasks||[]).length} tâches.\n\n` +
+      `Cette action est irréversible. Confirmer ?`
+    );
+    if(!ok) return;
+    setManualInitBusy(true);
+    try {
+      const {error} = await sb.from('app_data').upsert({id:1, data:dataToWrite, updated_at:new Date().toISOString()});
+      if(error) throw error;
+      lastRemoteDataSize = JSON.stringify(dataToWrite).length;
+      isRemoteUpdate.current = true;
+      setData(dataToWrite);
+      try { localStorage.setItem(LS_KEY, JSON.stringify(dataToWrite)); } catch(e) {}
+      saveLocalBackup(dataToWrite);
+      addSyncLog('MANUAL_INIT_OK', `size=${lastRemoteDataSize}B`);
+      setSyncStatus('ok');
+      addToast('Base initialisée avec succès ☁️', 'success');
+    } catch(e) {
+      console.error('[SAFE-SYNC] Initialisation manuelle échouée:', e);
+      addSyncLog('MANUAL_INIT_ERROR', e.message);
+      addToast('Erreur d\'initialisation : ' + e.message, 'error');
+    }
+    setManualInitBusy(false);
+  }, [addToast]);
+
   // On mount: fetch from Supabase + subscribe realtime
   React.useEffect(() => {
     let channel;
     (async () => {
       try {
         const { data: rows, error } = await sb.from('app_data').select('data').eq('id', 1).single();
+
         if (!error && rows && rows.data) {
+          // CAS OK : données distantes chargées avec succès
           const remote = securizeData(rows.data);
+          lastRemoteDataSize = JSON.stringify(remote).length;
           isRemoteUpdate.current = true;
           setData(remote);
           try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
+          saveLocalBackup(remote);
+          addSyncLog('LOAD_OK', `size=${lastRemoteDataSize}B`);
+          setSyncStatus('ok');
+        } else if(error && (error.code === 'PGRST116' || error.details?.includes('0 rows'))) {
+          // CAS VIDE : la ligne n'existe pas encore — JAMAIS d'upsert automatique
+          console.warn('[SAFE-SYNC] Ligne distante absente (PGRST116). Aucune écriture automatique.');
+          addSyncLog('LOAD_EMPTY', 'Row id=1 absent de Supabase');
+          setSyncStatus('empty');
         } else {
-          // Première connexion : pousser les données locales sur Supabase
-          const local = loadData();
-          await sb.from('app_data').upsert({id:1, data:local, updated_at:new Date().toISOString()});
+          // CAS ERREUR : lecture distante échouée — on ne touche PAS à la base
+          console.error('[SAFE-SYNC] Lecture Supabase échouée:', error);
+          addSyncLog('LOAD_ERROR', error?.message || 'unknown');
+          setSyncStatus('error');
         }
-        setSyncStatus('ok');
       } catch(e) {
-        console.error('Supabase load error:', e);
+        // Exception réseau ou autre — on ne touche PAS à la base
+        console.error('[SAFE-SYNC] Exception au chargement:', e);
+        addSyncLog('LOAD_EXCEPTION', e.message);
         setSyncStatus('error');
       }
       setSynced(true);
     })();
 
-    // Realtime
+    // Realtime — avec garde anti-démo et anti-régression
     channel = sb.channel('app_data_realtime')
       .on('postgres_changes', {event:'UPDATE', schema:'public', table:'app_data'}, (payload) => {
         if(!payload.new?.data) return;
         const incoming = securizeData(payload.new.data);
+        // V21 : bloquer les mises à jour realtime suspectes
+        if(isDemoData(incoming)) {
+          console.error('[SAFE-SYNC] Mise à jour realtime bloquée : données de démo détectées');
+          addSyncLog('REALTIME_BLOCKED', 'demo data detected');
+          return;
+        }
+        lastRemoteDataSize = JSON.stringify(incoming).length;
         isRemoteUpdate.current = true;
         setData(incoming);
         try { localStorage.setItem(LS_KEY, JSON.stringify(incoming)); } catch(e) {}
+        saveLocalBackup(incoming);
+        addSyncLog('REALTIME_UPDATE', `size=${lastRemoteDataSize}B`);
         addToast('Synchronisé ☁️', 'info');
       })
       .subscribe();
@@ -4582,8 +4724,55 @@ function App() {
           </button>
         </div>
       </div>
+      {/* V21 – Bannière base distante vide : initialisation manuelle requise */}
+      {syncStatus === 'empty' && (
+        <div className="md:ml-60 fixed top-0 left-0 right-0 z-10 pt-0 md:pt-0">
+          <div className="bg-amber-50 border-b-2 border-amber-300 px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="flex items-center gap-2 flex-1">
+              <span className="text-amber-500 text-lg">🟡</span>
+              <div>
+                <div className="font-semibold text-amber-800 text-sm">Base distante vide — aucune écriture automatique effectuée</div>
+                <div className="text-amber-700 text-xs mt-0.5">La ligne Supabase est absente. Initialisez manuellement avec vos données locales ou démarrez avec une base vide.</div>
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                disabled={manualInitBusy}
+                onClick={() => handleManualInit('locales (localStorage)', data)}
+                className="px-3 py-1.5 bg-amber-600 text-white text-xs font-semibold rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              >
+                {manualInitBusy ? 'Initialisation...' : 'Initialiser avec données locales'}
+              </button>
+              <button
+                disabled={manualInitBusy}
+                onClick={() => handleManualInit('vides', securizeData({}))}
+                className="px-3 py-1.5 bg-white border border-amber-400 text-amber-700 text-xs font-semibold rounded-lg hover:bg-amber-50 disabled:opacity-50 transition-colors"
+              >
+                Démarrer vide
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* V21 – Bannière erreur de synchronisation */}
+      {syncStatus === 'error' && (
+        <div className="md:ml-60 fixed top-0 left-0 right-0 z-10">
+          <div className="bg-red-50 border-b-2 border-red-300 px-4 py-2 flex items-center gap-2">
+            <span className="text-red-500">⚠️</span>
+            <div className="flex-1">
+              <span className="font-semibold text-red-700 text-xs">Erreur de connexion Supabase</span>
+              <span className="text-red-600 text-xs ml-2">— Mode local actif. Vos modifications sont sauvegardées localement mais pas synchronisées.</span>
+            </div>
+            <button onClick={()=>doExport(data)} className="px-2 py-1 bg-red-100 border border-red-300 text-red-700 text-xs rounded hover:bg-red-200 transition-colors">
+              Exporter JSON
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main content */}
-      <main className="md:ml-60 pt-0 md:pt-0">
+      <main className={`md:ml-60 pt-0 md:pt-0 ${syncStatus==='empty'||syncStatus==='error' ? 'mt-16 sm:mt-12' : ''}`}>
         <div className="pt-14 md:pt-0 min-h-screen">
           <div className="max-w-6xl mx-auto px-4 py-6">
             {renderModule()}
