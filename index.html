@@ -4510,7 +4510,7 @@ function App() {
             </div>
             <button
               onClick={async () => {
-                const { data: rows, error } = await sb.from('app_data').select('data, version').eq('id', 1).single();
+                const { data: rows, error } = await sb.from('app_data').select('data').eq('id', 1).single();
                 if(!error && rows?.data) {
                   const remote = securizeData(rows.data);
                   setLocalVersion(rows.version || 1);
