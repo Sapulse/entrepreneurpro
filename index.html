@@ -4417,6 +4417,24 @@ function App() {
     let channel;
     (async () => {
       try {
+        // Phase B : lecture depuis les tables entité en priorité
+        if(typeof loadFromEntityTables === 'function') {
+          const entityData = await loadFromEntityTables();
+          if(entityData) {
+            const secured = securizeData(entityData);
+            persistRemoteSize(JSON.stringify(secured).length);
+            isRemoteUpdate.current = true;
+            setData(secured);
+            try { localStorage.setItem(LS_KEY, JSON.stringify(secured)); } catch(e) {}
+            saveLocalBackup(secured);
+            didLoadRemote.current = true;
+            setSyncStatus('ok');
+            setSynced(true);
+            return; // tables entité OK — pas besoin de lire app_data
+          }
+          // Si null : tables vides ou erreur → on continue avec app_data ci-dessous
+        }
+
         const { data: rows, error } = await sb.from('app_data').select('data').eq('id', 1).single();
 
         if (!error && rows && rows.data) {
@@ -4536,6 +4554,16 @@ function App() {
     if(!entityWriteReady()) return;
     if(typeof syncConfigToTable === 'function') syncConfigToTable(data.config, data.bank).catch(()=>{});
   }, [data.config, data.bank?.initialBalance, synced, syncStatus]); // eslint-disable-line
+
+  React.useEffect(() => {
+    if(!entityWriteReady()) return;
+    if(typeof syncQuotesToTable === 'function') syncQuotesToTable(data.quotes).catch(()=>{});
+  }, [data.quotes, synced, syncStatus]); // eslint-disable-line
+
+  React.useEffect(() => {
+    if(!entityWriteReady()) return;
+    if(typeof syncInvoicesToTable === 'function') syncInvoicesToTable(data.invoices).catch(()=>{});
+  }, [data.invoices, synced, syncStatus]); // eslint-disable-line
   // ─────────────────────────────────────────────────────────────────────────────
 
   // Sauvegarde Supabase à chaque changement (sauf mises à jour reçues du realtime)
