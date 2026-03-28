@@ -104,10 +104,19 @@ function saveData(d) {
     await Promise.allSettled(entityFns);
 
     // Ping de sync : incrément de version dans app_data — plus de blob data
+    // Si la colonne version n'existe pas encore (PGRST204), on réessaie sans version
     const newVersion = (_localVersion > 0 ? _localVersion : 0) + 1;
-    const { data: result, error } = await sb.from('app_data')
+    let { data: result, error } = await sb.from('app_data')
       .upsert({ id: 1, version: newVersion })
       .select('id');
+
+    if(error && error.code === 'PGRST204' && error.message?.includes('version')) {
+      // Colonne version absente — ping sans version (tables entité déjà écrites)
+      const retry = await sb.from('app_data').upsert({ id: 1 }).select('id');
+      result = retry.data;
+      error  = retry.error;
+      if(!error) addSyncLog('WRITE_OK', 'entities synced (no version col — run: ALTER TABLE app_data ADD COLUMN version INTEGER DEFAULT 0)');
+    }
 
     if(error) {
       console.error('[SAFE-SYNC] Supabase ping error:', error.code, error.message);
@@ -117,7 +126,7 @@ function saveData(d) {
       addSyncLog('WRITE_SILENT_BLOCK', 'upsert returned [] — vérifier RLS sur app_data');
       if(_onSyncStatusChange) _onSyncStatusChange('error');
     } else {
-      _localVersion = newVersion;
+      if(newVersion > 1 || _localVersion > 0) _localVersion = newVersion;
       addSyncLog('WRITE_OK', `v=${_localVersion} entities synced`);
       if(_onSyncStatusChange) _onSyncStatusChange('ok');
     }
