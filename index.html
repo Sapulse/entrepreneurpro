@@ -3993,7 +3993,85 @@ const NAV_ITEMS = [
   {id:'resources', label:'Drive & Liens', icon:'🔗'},
 ];
 
-function Sidebar({active, onChange, onExport, onImport, version, sidebarOpen, setSidebarOpen, syncStatus, onSearch, onAlerts, alertCount}) {
+// ============================================================
+// SNAPSHOT MODAL (V23)
+// ============================================================
+function SnapshotModal({onClose, onRollback}) {
+  const [snapshots, setSnapshots] = React.useState(null); // null = loading
+  const [creating, setCreating] = React.useState(false);
+  const [rolling, setRolling] = React.useState(null); // id en cours
+  const addToast = useToast();
+
+  React.useEffect(() => {
+    listSnapshots().then(setSnapshots);
+  }, []);
+
+  const handleCreate = async () => {
+    setCreating(true);
+    await createSnapshot('manual');
+    const updated = await listSnapshots();
+    setSnapshots(updated);
+    setCreating(false);
+    addToast('Snapshot créé ☁️', 'success');
+  };
+
+  const handleRollback = async (snap) => {
+    const label = new Date(snap.ts).toLocaleString('fr-FR');
+    if(!window.confirm(`Restaurer l'état du ${label} ?\n\nL'état actuel sera snapshotté automatiquement avant restauration.`)) return;
+    setRolling(snap.id);
+    rollbackToSnapshot(snap.id,
+      (d) => { addToast('Restauration réussie ☁️', 'success'); onRollback(d); onClose(); },
+      (err) => { addToast('Erreur restauration : ' + err, 'error'); setRolling(null); }
+    );
+  };
+
+  const fmtSize = (b) => b >= 1024 ? (b/1024).toFixed(1)+'KB' : b+'B';
+  const triggerLabel = (t) => ({startup:'Démarrage', 'pre-import':'Avant import', 'pre-rollback':'Avant restauration', manual:'Manuel'}[t] || t);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <div className="font-semibold text-gray-800">Snapshots cloud ☁️</div>
+            <div className="text-xs text-gray-400 mt-0.5">Historique des sauvegardes distantes (max 20)</div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+        </div>
+        <div className="px-5 py-3 border-b border-gray-50">
+          <button onClick={handleCreate} disabled={creating} className="flex items-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-medium rounded-xl transition-colors disabled:opacity-50">
+            {creating ? '⏳ Création...' : '📸 Créer un snapshot maintenant'}
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
+          {snapshots === null && <div className="text-sm text-gray-400 py-4 text-center">Chargement...</div>}
+          {snapshots && snapshots.length === 0 && <div className="text-sm text-gray-400 py-4 text-center">Aucun snapshot disponible</div>}
+          {(snapshots||[]).map(snap => (
+            <div key={snap.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-gray-700 truncate">
+                  {new Date(snap.ts).toLocaleString('fr-FR')}
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5">
+                  {triggerLabel(snap.triggered_by)} · v{snap.version||'?'} · {fmtSize(snap.size_bytes||0)}
+                </div>
+              </div>
+              <button
+                onClick={() => handleRollback(snap)}
+                disabled={rolling !== null}
+                className="shrink-0 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                {rolling === snap.id ? '⏳' : '↩ Restaurer'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({active, onChange, onExport, onImport, onSnapshots, version, sidebarOpen, setSidebarOpen, syncStatus, onSearch, onAlerts, alertCount}) {
   const fileRef = React.useRef();
   const dragNavItem = React.useRef(null);
 
@@ -4097,17 +4175,22 @@ function Sidebar({active, onChange, onExport, onImport, version, sidebarOpen, se
         <button onClick={()=>fileRef.current?.click()} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-gray-500 hover:bg-gray-50 transition-colors">
           <span>⬆️</span> Importer JSON
         </button>
+        <button onClick={onSnapshots} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-gray-500 hover:bg-gray-50 transition-colors">
+          <span>📸</span> Snapshots cloud
+        </button>
         <input type="file" ref={fileRef} accept=".json" className="hidden" onChange={handleImportFile}/>
         <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium ${
           syncStatus==='ok' ? 'text-green-600' :
           syncStatus==='empty' ? 'text-amber-600' :
           syncStatus==='loading' ? 'text-gray-400' :
+          syncStatus==='conflict' ? 'text-orange-600' :
           'text-red-500'
         }`}>
-          <span>{syncStatus==='ok'?'☁️':syncStatus==='empty'?'🟡':syncStatus==='loading'?'⏳':'⚠️'}</span>
+          <span>{syncStatus==='ok'?'☁️':syncStatus==='empty'?'🟡':syncStatus==='loading'?'⏳':syncStatus==='conflict'?'⚡':'⚠️'}</span>
           {syncStatus==='ok' ? 'Supabase connecté' :
            syncStatus==='empty' ? 'Base distante vide' :
            syncStatus==='loading' ? 'Connexion...' :
+           syncStatus==='conflict' ? 'Conflit détecté' :
            'Erreur sync – mode local'}
         </div>
       </div>
@@ -4136,10 +4219,12 @@ function App() {
   const [contractDeepLink, setContractDeepLink] = React.useState(null);
   const [bankDeepLink, setBankDeepLink] = React.useState(null);
   const [synced, setSynced] = React.useState(false);
-  const [syncStatus, setSyncStatus] = React.useState('loading'); // 'loading' | 'ok' | 'error' | 'empty'
+  const [syncStatus, setSyncStatus] = React.useState('loading'); // 'loading' | 'ok' | 'error' | 'empty' | 'conflict'
   const [manualInitBusy, setManualInitBusy] = React.useState(false);
   const [showSearch, setShowSearch] = React.useState(false);
   const [showAlerts, setShowAlerts] = React.useState(false);
+  const [showSnapshots, setShowSnapshots] = React.useState(false);
+  const [autoExportBanner, setAutoExportBanner] = React.useState(false);
   const isRemoteUpdate = React.useRef(false);
   const addToast = useToast();
 
@@ -4160,6 +4245,11 @@ function App() {
   React.useEffect(() => {
     _onSyncStatusChange = (status) => setSyncStatus(status);
     return () => { _onSyncStatusChange = null; };
+  }, []);
+
+  // V23 : rappel export automatique si dernier export > 7 jours
+  React.useEffect(() => {
+    if(shouldAutoExport()) setAutoExportBanner(true);
   }, []);
 
   const handleManualInit = React.useCallback(async (sourceLabel, dataToWrite) => {
@@ -4204,17 +4294,20 @@ function App() {
     let channel;
     (async () => {
       try {
-        const { data: rows, error } = await sb.from('app_data').select('data').eq('id', 1).single();
+        const { data: rows, error } = await sb.from('app_data').select('data, version').eq('id', 1).single();
 
         if (!error && rows && rows.data) {
           // CAS OK : données distantes chargées avec succès
           const remote = securizeData(rows.data);
           persistRemoteSize(JSON.stringify(remote).length); // R4 : persistance taille distante
+          setLocalVersion(rows.version || 1); // V23 : mémoriser la version pour détection conflit
           isRemoteUpdate.current = true;
           setData(remote);
           try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
           saveLocalBackup(remote);
-          addSyncLog('LOAD_OK', `size=${lastRemoteDataSize}B`);
+          addSyncLog('LOAD_OK', `size=${lastRemoteDataSize}B v=${rows.version||1}`);
+          // V23 : snapshot de démarrage (une fois par session)
+          if(shouldCreateStartupSnapshot()) createSnapshot('startup');
           setSyncStatus('ok');
         } else if(error && (error.code === 'PGRST116' || error.details?.includes('0 rows'))) {
           // CAS VIDE : la ligne n'existe pas encore — JAMAIS d'upsert automatique
@@ -4288,7 +4381,11 @@ function App() {
 
   const handleImport = (file) => {
     doImport(file,
-      (imported) => { setData(imported); addToast('Import réussi','success'); },
+      async (imported) => {
+        await createSnapshot('pre-import'); // V23 : snapshot de sécurité avant tout import
+        setData(imported);
+        addToast('Import réussi','success');
+      },
       (err) => addToast(err,'error')
     );
   };
@@ -4328,8 +4425,9 @@ function App() {
       <Sidebar
         active={activeModule}
         onChange={setActiveModule}
-        onExport={()=>doExport(data)}
+        onExport={() => { doExport(data); markExportDone(); setAutoExportBanner(false); }}
         onImport={handleImport}
+        onSnapshots={() => setShowSnapshots(true)}
         version={APP_VERSION}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
@@ -4396,8 +4494,65 @@ function App() {
         </div>
       )}
 
+      {/* V23 – Bannière conflit multi-utilisateur */}
+      {syncStatus === 'conflict' && (
+        <div className="md:ml-60 fixed top-0 left-0 right-0 z-10">
+          <div className="bg-orange-50 border-b-2 border-orange-300 px-4 py-2 flex items-center gap-2">
+            <span className="text-orange-500">⚡</span>
+            <div className="flex-1">
+              <span className="font-semibold text-orange-700 text-xs">Conflit détecté</span>
+              <span className="text-orange-600 text-xs ml-2">— Les données ont été modifiées depuis un autre appareil. Rechargez pour récupérer la version distante.</span>
+            </div>
+            <button
+              onClick={async () => {
+                const { data: rows, error } = await sb.from('app_data').select('data, version').eq('id', 1).single();
+                if(!error && rows?.data) {
+                  const remote = securizeData(rows.data);
+                  setLocalVersion(rows.version || 1);
+                  isRemoteUpdate.current = true;
+                  setData(remote);
+                  try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
+                  setSyncStatus('ok');
+                  addToast('Données distantes rechargées ☁️', 'success');
+                } else {
+                  addToast('Rechargement échoué : ' + (error?.message||'inconnu'), 'error');
+                }
+              }}
+              className="px-3 py-1 bg-orange-600 text-white text-xs font-semibold rounded hover:bg-orange-700 transition-colors"
+            >
+              Recharger depuis Supabase
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* V23 – Rappel export automatique */}
+      {autoExportBanner && syncStatus === 'ok' && (
+        <div className="md:ml-60 fixed top-0 left-0 right-0 z-10">
+          <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center gap-2">
+            <span className="text-blue-500">💾</span>
+            <div className="flex-1 text-xs text-blue-700">
+              Vous n'avez pas exporté vos données depuis plus de 7 jours. Un export JSON local est recommandé comme filet de sécurité.
+            </div>
+            <button
+              onClick={() => { doExport(data); markExportDone(); setAutoExportBanner(false); }}
+              className="px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 transition-colors"
+            >Exporter maintenant</button>
+            <button onClick={() => setAutoExportBanner(false)} className="text-blue-400 hover:text-blue-600 text-sm px-1">✕</button>
+          </div>
+        </div>
+      )}
+
+      {/* V23 – Modal snapshots */}
+      {showSnapshots && (
+        <SnapshotModal
+          onClose={() => setShowSnapshots(false)}
+          onRollback={(d) => { isRemoteUpdate.current = true; setData(d); }}
+        />
+      )}
+
       {/* Main content */}
-      <main className={`md:ml-60 pt-0 md:pt-0 ${syncStatus==='empty'||syncStatus==='error' ? 'mt-16 sm:mt-12' : ''}`}>
+      <main className={`md:ml-60 pt-0 md:pt-0 ${syncStatus==='empty'||syncStatus==='error'||syncStatus==='conflict'||autoExportBanner ? 'mt-10 sm:mt-10' : ''}`}>
         <div className="pt-14 md:pt-0 min-h-screen">
           <div className="max-w-6xl mx-auto px-4 py-6">
             {renderModule()}

@@ -66,6 +66,7 @@ function loadData() {
 }
 
 // Écriture vers localStorage + Supabase avec validation obligatoire
+// V23 : vérifie la version distante avant d'écrire (détection conflit multi-utilisateur)
 // IMPORTANT : ne jamais appeler sans passer par le useEffect guard (syncStatus === 'ok')
 function saveData(d) {
   // Écriture locale systématique
@@ -80,17 +81,33 @@ function saveData(d) {
   }
 
   const size = JSON.stringify(d).length;
-  sb.from('app_data').upsert({id:1, data:d, updated_at:new Date().toISOString()}).then(({error}) => {
+
+  (async () => {
+    // V23 : vérification de version pour détecter les conflits multi-utilisateur
+    if(_localVersion > 0) {
+      const { data: row } = await sb.from('app_data').select('version').eq('id', 1).single();
+      if(row && typeof row.version === 'number' && row.version !== _localVersion) {
+        addSyncLog('CONFLICT_DETECTED', `local_v=${_localVersion} remote_v=${row.version}`);
+        if(_onSyncStatusChange) _onSyncStatusChange('conflict');
+        return; // Écriture bloquée — l'utilisateur doit résoudre manuellement
+      }
+    }
+
+    const newVersion = (_localVersion || 0) + 1;
+    const { error } = await sb.from('app_data').upsert({
+      id: 1, data: d, version: newVersion, updated_at: new Date().toISOString()
+    });
     if(error) {
       console.error('[SAFE-SYNC] Supabase save error:', error);
       addSyncLog('WRITE_ERROR', error.message);
       if(_onSyncStatusChange) _onSyncStatusChange('error');
     } else {
+      _localVersion = newVersion;
       persistRemoteSize(size);
-      addSyncLog('WRITE_OK', `size=${size}B`);
+      addSyncLog('WRITE_OK', `size=${size}B v=${newVersion}`);
       if(_onSyncStatusChange) _onSyncStatusChange('ok');
     }
-  });
+  })();
 }
 
 // Export JSON — téléchargement côté client
