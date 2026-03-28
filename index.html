@@ -4121,7 +4121,7 @@ function SyncStatusButton({syncStatus}) {
   </>);
 }
 
-function Sidebar({active, onChange, onExport, onImport, onSnapshots, version, sidebarOpen, setSidebarOpen, syncStatus, onSearch, onAlerts, alertCount}) {
+function Sidebar({active, onChange, onExport, onImport, onSnapshots, onTestSync, testSyncBusy, version, sidebarOpen, setSidebarOpen, syncStatus, onSearch, onAlerts, alertCount}) {
   const fileRef = React.useRef();
   const dragNavItem = React.useRef(null);
 
@@ -4228,6 +4228,11 @@ function Sidebar({active, onChange, onExport, onImport, onSnapshots, version, si
         <button onClick={onSnapshots} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-gray-500 hover:bg-gray-50 transition-colors">
           <span>📸</span> Snapshots cloud
         </button>
+        <button onClick={onTestSync} disabled={testSyncBusy}
+          title="Teste l'écriture ET la lecture dans Supabase — confirme que la sync fonctionne réellement"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-indigo-600 hover:bg-indigo-50 disabled:opacity-50 transition-colors font-medium">
+          <span>{testSyncBusy ? '⏳' : '🔍'}</span> {testSyncBusy ? 'Test en cours...' : 'Tester la sync'}
+        </button>
         <input type="file" ref={fileRef} accept=".json" className="hidden" onChange={handleImportFile}/>
         <SyncStatusButton syncStatus={syncStatus}/>
       </div>
@@ -4278,12 +4283,52 @@ function App() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // V21 – Initialisation manuelle : uniquement si la ligne Supabase est réellement absente
   // R3/R8 : enregistrement du callback syncStatus dès le montage
   React.useEffect(() => {
     _onSyncStatusChange = (status) => setSyncStatus(status);
     return () => { _onSyncStatusChange = null; };
   }, []);
+
+  // V25 — Test de synchronisation Supabase : écriture + lecture de vérification
+  const [testSyncBusy, setTestSyncBusy] = React.useState(false);
+  const handleTestSync = React.useCallback(async () => {
+    setTestSyncBusy(true);
+    try {
+      // 1. Écriture
+      const payload = {id: 1, data};
+      const { data: written, error: writeErr } = await sb.from('app_data').upsert(payload).select('id');
+      if(writeErr) {
+        addToast(`❌ Écriture échouée : ${writeErr.code} — ${writeErr.message}`, 'error');
+        addSyncLog('TEST_WRITE_ERROR', `${writeErr.code}: ${writeErr.message}`);
+        return;
+      }
+      if(!written || written.length === 0) {
+        addToast('❌ Écriture bloquée silencieusement (RLS Supabase). Vérifier les politiques UPDATE sur app_data.', 'error');
+        addSyncLog('TEST_WRITE_SILENT_BLOCK', 'upsert returned [] — RLS UPDATE policy missing?');
+        return;
+      }
+      // 2. Lecture de vérification
+      const { data: readBack, error: readErr } = await sb.from('app_data').select('data').eq('id', 1).single();
+      if(readErr || !readBack?.data) {
+        addToast(`⚠️ Écriture OK mais lecture échouée : ${readErr?.message||'no data'}`, 'error');
+        return;
+      }
+      const writtenSize = JSON.stringify(data).length;
+      const readSize = JSON.stringify(readBack.data).length;
+      if(writtenSize !== readSize) {
+        addToast(`⚠️ Taille écrite (${writtenSize}B) ≠ taille lue (${readSize}B) — possible troncature`, 'error');
+        addSyncLog('TEST_SIZE_MISMATCH', `written=${writtenSize}B read=${readSize}B`);
+        return;
+      }
+      addToast(`✅ Sync OK — ${writtenSize}B écrits et vérifiés dans Supabase`, 'success');
+      addSyncLog('TEST_SYNC_OK', `size=${writtenSize}B`);
+      if(syncStatus !== 'ok') setSyncStatus('ok');
+    } catch(e) {
+      addToast(`❌ Exception : ${e.message}`, 'error');
+      addSyncLog('TEST_EXCEPTION', e.message);
+    }
+    setTestSyncBusy(false);
+  }, [data, syncStatus, addToast]);
 
   // V23 : rappel export automatique si dernier export > 7 jours
   React.useEffect(() => {
@@ -4511,6 +4556,8 @@ function App() {
         onExport={() => { doExport(data); markExportDone(); setAutoExportBanner(false); }}
         onImport={handleImport}
         onSnapshots={() => setShowSnapshots(true)}
+        onTestSync={handleTestSync}
+        testSyncBusy={testSyncBusy}
         version={APP_VERSION}
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
