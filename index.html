@@ -4392,16 +4392,17 @@ function App() {
     if(!ok) return;
     setManualInitBusy(true);
     try {
-      const {error} = await sb.from('app_data').upsert({id:1, data:dataToWrite, updated_at:new Date().toISOString()});
+      const { data: result, error } = await sb.from('app_data').upsert({id:1, data:dataToWrite}).select('id');
       if(error) throw error;
-      persistRemoteSize(JSON.stringify(dataToWrite).length); // R4 : persistance taille
+      if(!result || result.length === 0) throw new Error('Écriture bloquée silencieusement (RLS) — désactivez RLS sur app_data dans Supabase');
+      persistRemoteSize(JSON.stringify(dataToWrite).length);
       isRemoteUpdate.current = true;
       setData(dataToWrite);
       try { localStorage.setItem(LS_KEY, JSON.stringify(dataToWrite)); } catch(e) {}
       saveLocalBackup(dataToWrite);
       addSyncLog('MANUAL_INIT_OK', `size=${lastRemoteDataSize}B`);
       setSyncStatus('ok');
-      addToast('Base initialisée avec succès ☁️', 'success');
+      addToast('Base initialisée avec succès ☁️ — synchronisation activée', 'success');
     } catch(e) {
       console.error('[SAFE-SYNC] Initialisation manuelle échouée:', e);
       addSyncLog('MANUAL_INIT_ERROR', e.message);
@@ -4418,20 +4419,29 @@ function App() {
         const { data: rows, error } = await sb.from('app_data').select('data').eq('id', 1).single();
 
         if (!error && rows && rows.data) {
-          // CAS OK : données distantes chargées avec succès
           const remote = securizeData(rows.data);
-          persistRemoteSize(JSON.stringify(remote).length); // R4 : persistance taille distante
+
+          // V25 — CAS CRITIQUE : données de démo détectées dans Supabase
+          // Ne jamais les charger dans data — traiter comme base vide et laisser l'utilisateur écraser
+          if(isDemoData(remote)) {
+            console.warn('[SAFE-SYNC] Données de démo détectées dans Supabase — chargement bloqué, état = demo_remote');
+            addSyncLog('LOAD_DEMO_REMOTE', 'Supabase contient des données de démo — à écraser avec données réelles');
+            setSyncStatus('demo_remote');
+            setSynced(true);
+            return;
+          }
+
+          // CAS OK : données distantes réelles chargées avec succès
+          persistRemoteSize(JSON.stringify(remote).length);
           isRemoteUpdate.current = true;
           setData(remote);
           try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
           saveLocalBackup(remote);
-          // V23 : récupère la version distante séparément (optionnel — silencieux si colonne absente)
           sb.from('app_data').select('version').eq('id', 1).single().then(({data: vrow}) => {
             if(vrow && typeof vrow.version === 'number' && typeof setLocalVersion === 'function') setLocalVersion(vrow.version);
           }).catch(() => {});
           addSyncLog('LOAD_OK', `size=${lastRemoteDataSize}B`);
-          didLoadRemote.current = true; // V24 : marque le chargement distant comme réussi
-          // V23 : snapshot de démarrage (une fois par session, silencieux si table absente)
+          didLoadRemote.current = true;
           if(typeof shouldCreateStartupSnapshot === 'function' && shouldCreateStartupSnapshot()) {
             if(typeof createSnapshot === 'function') createSnapshot('startup').catch(() => {});
           }
@@ -4492,7 +4502,7 @@ function App() {
     // 'loading' : montage en cours, attente
     // 'empty' : ligne distante absente, initialisation manuelle requise
     // 'conflict' : conflit en cours de résolution automatique — ne pas écrire pendant ce temps
-    if(syncStatus === 'loading' || syncStatus === 'empty' || syncStatus === 'conflict') return;
+    if(syncStatus === 'loading' || syncStatus === 'empty' || syncStatus === 'conflict' || syncStatus === 'demo_remote') return;
     // 'error' : autorisé UNIQUEMENT si Supabase a déjà été lu avec succès (donc on a bien les données distantes)
     // — si jamais lu (didLoadRemote=false), bloquer pour éviter d'écraser la base avec des données locales potentiellement obsolètes
     if(syncStatus === 'error' && !didLoadRemote.current) return;
@@ -4608,6 +4618,35 @@ function App() {
         </div>
       )}
 
+      {/* V25 – Bannière données de démo dans Supabase */}
+      {syncStatus === 'demo_remote' && (
+        <div className="md:ml-60 fixed top-0 left-0 right-0 z-10 pt-0">
+          <div className="bg-purple-50 border-b-2 border-purple-300 px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="flex items-center gap-2 flex-1">
+              <span className="text-purple-500 text-lg">🧹</span>
+              <div>
+                <div className="font-semibold text-purple-800 text-sm">Données de démo détectées dans Supabase</div>
+                <div className="text-purple-700 text-xs mt-0.5">La base distante contient encore les anciennes données de démonstration. Écrasez-les avec vos données réelles pour activer la synchronisation.</div>
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => handleManualInit('locales (localStorage)', data)}
+                className="px-3 py-1.5 bg-purple-600 text-white text-xs font-semibold rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                Écraser avec mes données
+              </button>
+              <button
+                onClick={() => handleManualInit('vides', securizeData({}))}
+                className="px-3 py-1.5 bg-white border border-purple-400 text-purple-700 text-xs font-semibold rounded-lg hover:bg-purple-50 transition-colors"
+              >
+                Démarrer vide
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* V21/V24 – Bannière erreur de synchronisation */}
       {syncStatus === 'error' && (() => {
         const lastErr = (() => { try { const l=JSON.parse(localStorage.getItem('entrepreneurpro_sync_log')||'[]'); const e=l.find(x=>x.action?.includes('ERROR')||x.action?.includes('BLOCK')); return e?.detail||''; } catch(e){return '';} })();
@@ -4688,7 +4727,7 @@ function App() {
       )}
 
       {/* Main content */}
-      <main className={`md:ml-60 pt-0 md:pt-0 ${syncStatus==='empty'||syncStatus==='error'||syncStatus==='conflict'||autoExportBanner ? 'mt-10 sm:mt-10' : ''}`}>
+      <main className={`md:ml-60 pt-0 md:pt-0 ${syncStatus==='empty'||syncStatus==='error'||syncStatus==='conflict'||syncStatus==='demo_remote'||autoExportBanner ? 'mt-10 sm:mt-10' : ''}`}>
         <div className="pt-14 md:pt-0 min-h-screen">
           <div className="max-w-6xl mx-auto px-4 py-6">
             {renderModule()}
