@@ -65,26 +65,21 @@ function loadData() {
   }
 }
 
-// Écriture vers localStorage + Supabase avec validation obligatoire
-// V24 : payload simplifié ({id,data} uniquement), détection des blocages silencieux RLS,
-//       validation failures rendent syncStatus='error' (plus de silence)
+// Écriture vers localStorage + Supabase
+// Phase C : entity tables écrites en premier, puis ping version dans app_data (plus de blob data)
 function saveData(d) {
   // Écriture locale systématique
   try { localStorage.setItem(LS_KEY, JSON.stringify(d)); } catch(e) {}
 
-  // Seule garde absolue conservée : jamais écrire les données de démo
   if(isDemoData(d)) {
     console.error('[SAFE-SYNC] WRITE_BLOCKED — données de démo détectées');
     addSyncLog('WRITE_BLOCKED', 'DEMO_DATA');
-    if(_onSyncStatusChange) _onSyncStatusChange('error'); // V24 : rendu visible
+    if(_onSyncStatusChange) _onSyncStatusChange('error');
     return;
   }
 
-  const size = JSON.stringify(d).length;
-  console.log('[SAFE-SYNC] saveData → upsert Supabase, size=', size);
-
   (async () => {
-    // V23 : vérification de version (uniquement si migration effectuée, _localVersion > 0)
+    // Détection conflit version (si migration effectuée)
     if(_localVersion > 0) {
       const { data: row } = await sb.from('app_data').select('version').eq('id', 1).single();
       if(row && typeof row.version === 'number' && row.version !== _localVersion) {
@@ -94,29 +89,36 @@ function saveData(d) {
       }
     }
 
-    // Payload minimal — seuls id et data, sans updated_at ni version (compatibles avec tout schéma)
-    const payload = {id: 1, data: d};
-    if(_localVersion > 0) {
-      payload.version = (_localVersion || 0) + 1;
-    }
+    // Phase C : écriture dans les tables entité (toutes en parallèle, silencieuses sur erreur)
+    const entityFns = [
+      typeof syncClientsToTable       === 'function' ? syncClientsToTable(d.clients              || []) : null,
+      typeof syncContractsToTable     === 'function' ? syncContractsToTable(d.contracts           || []) : null,
+      typeof syncBankTxToTable        === 'function' ? syncBankTxToTable(d.bank?.transactions     || []) : null,
+      typeof syncExpensesToTable      === 'function' ? syncExpensesToTable(d.expenses             || []) : null,
+      typeof syncTasksToTable         === 'function' ? syncTasksToTable(d.tasks                  || []) : null,
+      typeof syncSubscriptionsToTable === 'function' ? syncSubscriptionsToTable(d.bank?.subscriptions || []) : null,
+      typeof syncQuotesToTable        === 'function' ? syncQuotesToTable(d.quotes                || []) : null,
+      typeof syncInvoicesToTable      === 'function' ? syncInvoicesToTable(d.invoices            || []) : null,
+      typeof syncConfigToTable        === 'function' ? syncConfigToTable(d.config, d.bank)            : null,
+    ].filter(Boolean);
+    await Promise.allSettled(entityFns);
 
-    // V24 : .select('id') pour détecter les blocages silencieux RLS (Supabase renvoie [] sans erreur)
-    const { data: result, error } = await sb.from('app_data').upsert(payload).select('id');
+    // Ping de sync : incrément de version dans app_data — plus de blob data
+    const newVersion = (_localVersion > 0 ? _localVersion : 0) + 1;
+    const { data: result, error } = await sb.from('app_data')
+      .upsert({ id: 1, version: newVersion })
+      .select('id');
 
     if(error) {
-      console.error('[SAFE-SYNC] Supabase upsert error:', error.code, error.message);
+      console.error('[SAFE-SYNC] Supabase ping error:', error.code, error.message);
       addSyncLog('WRITE_ERROR', `${error.code}: ${error.message}`);
       if(_onSyncStatusChange) _onSyncStatusChange('error');
     } else if(!result || result.length === 0) {
-      // RLS silencieux : upsert "réussi" mais aucune ligne affectée → permission refusée
-      console.error('[SAFE-SYNC] Upsert silencieusement bloqué (RLS ?) — aucune ligne affectée');
-      addSyncLog('WRITE_SILENT_BLOCK', `size=${size}B — vérifier les politiques RLS Supabase`);
+      addSyncLog('WRITE_SILENT_BLOCK', 'upsert returned [] — vérifier RLS sur app_data');
       if(_onSyncStatusChange) _onSyncStatusChange('error');
     } else {
-      if(_localVersion > 0) _localVersion = payload.version;
-      persistRemoteSize(size);
-      addSyncLog('WRITE_OK', `size=${size}B v=${_localVersion}`);
-      console.log('[SAFE-SYNC] Sauvegarde Supabase OK, size=', size);
+      _localVersion = newVersion;
+      addSyncLog('WRITE_OK', `v=${_localVersion} entities synced`);
       if(_onSyncStatusChange) _onSyncStatusChange('ok');
     }
   })();

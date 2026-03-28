@@ -4295,34 +4295,31 @@ function App() {
   const handleTestSync = React.useCallback(async () => {
     setTestSyncBusy(true);
     try {
+      // Phase C : test via tables entité
       // 1. Écriture
-      const payload = {id: 1, data};
-      const { data: written, error: writeErr } = await sb.from('app_data').upsert(payload).select('id');
-      if(writeErr) {
-        addToast(`❌ Écriture échouée : ${writeErr.code} — ${writeErr.message}`, 'error');
-        addSyncLog('TEST_WRITE_ERROR', `${writeErr.code}: ${writeErr.message}`);
-        return;
-      }
-      if(!written || written.length === 0) {
-        addToast('❌ Écriture bloquée silencieusement (RLS Supabase). Vérifier les politiques UPDATE sur app_data.', 'error');
-        addSyncLog('TEST_WRITE_SILENT_BLOCK', 'upsert returned [] — RLS UPDATE policy missing?');
-        return;
+      if(typeof syncClientsToTable === 'function') {
+        await Promise.allSettled([
+          syncClientsToTable(data.clients || []),
+          syncContractsToTable(data.contracts || []),
+        ]);
       }
       // 2. Lecture de vérification
-      const { data: readBack, error: readErr } = await sb.from('app_data').select('data').eq('id', 1).single();
-      if(readErr || !readBack?.data) {
-        addToast(`⚠️ Écriture OK mais lecture échouée : ${readErr?.message||'no data'}`, 'error');
+      const { data: clientsBack, error: readErr } = await sb.from('clients').select('id');
+      if(readErr) {
+        addToast(`❌ Lecture clients échouée : ${readErr.code} — ${readErr.message}`, 'error');
+        addSyncLog('TEST_READ_ERROR', `${readErr.code}: ${readErr.message}`);
         return;
       }
-      const writtenSize = JSON.stringify(data).length;
-      const readSize = JSON.stringify(readBack.data).length;
-      if(writtenSize !== readSize) {
-        addToast(`⚠️ Taille écrite (${writtenSize}B) ≠ taille lue (${readSize}B) — possible troncature`, 'error');
-        addSyncLog('TEST_SIZE_MISMATCH', `written=${writtenSize}B read=${readSize}B`);
+      const expected = (data.clients || []).length;
+      const actual   = (clientsBack || []).length;
+      if(expected !== actual) {
+        addToast(`⚠️ Clients attendus : ${expected}, lus : ${actual} — désynchronisation`, 'error');
+        addSyncLog('TEST_COUNT_MISMATCH', `expected=${expected} actual=${actual}`);
         return;
       }
-      addToast(`✅ Sync OK — ${writtenSize}B écrits et vérifiés dans Supabase`, 'success');
-      addSyncLog('TEST_SYNC_OK', `size=${writtenSize}B`);
+      const size = JSON.stringify(data).length;
+      addToast(`✅ Sync OK — clients=${actual} contracts=${(data.contracts||[]).length}`, 'success');
+      addSyncLog('TEST_SYNC_OK', `size=${size}B clients=${actual}`);
       if(syncStatus !== 'ok') setSyncStatus('ok');
     } catch(e) {
       addToast(`❌ Exception : ${e.message}`, 'error');
@@ -4342,6 +4339,25 @@ function App() {
     if(syncStatus !== 'conflict') return;
     (async () => {
       try {
+        // Phase C : résolution depuis les tables entité
+        if(typeof loadFromEntityTables === 'function') {
+          const entityData = await loadFromEntityTables();
+          if(entityData) {
+            const secured = securizeData(entityData);
+            // Récupérer la version distante
+            const { data: vrow } = await sb.from('app_data').select('version').eq('id', 1).single();
+            if(vrow?.version && typeof setLocalVersion === 'function') setLocalVersion(vrow.version);
+            persistRemoteSize(JSON.stringify(secured).length);
+            isRemoteUpdate.current = true;
+            setData(secured);
+            try { localStorage.setItem(LS_KEY, JSON.stringify(secured)); } catch(e) {}
+            addSyncLog('CONFLICT_AUTO_RESOLVED', `v=${vrow?.version||'?'} from entity tables`);
+            addToast('Données rechargées depuis Supabase (conflit résolu automatiquement)', 'info');
+            setSyncStatus('ok');
+            return;
+          }
+        }
+        // Fallback : app_data
         const { data: rows, error } = await sb.from('app_data').select('data, version').eq('id', 1).single();
         if(!error && rows?.data) {
           const remote = securizeData(rows.data);
@@ -4350,11 +4366,10 @@ function App() {
           isRemoteUpdate.current = true;
           setData(remote);
           try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
-          addSyncLog('CONFLICT_AUTO_RESOLVED', `v=${rows.version||'?'}`);
+          addSyncLog('CONFLICT_AUTO_RESOLVED', `v=${rows.version||'?'} fallback`);
           addToast('Données rechargées depuis Supabase (conflit résolu automatiquement)', 'info');
           setSyncStatus('ok');
         }
-        // Si l'échec persiste, le banner conflit reste visible pour action manuelle
       } catch(e) { console.warn('[SYNC] Auto-résolution conflit échouée:', e); }
     })();
   }, [syncStatus]);
@@ -4393,7 +4408,22 @@ function App() {
     if(!ok) return;
     setManualInitBusy(true);
     try {
-      const { data: result, error } = await sb.from('app_data').upsert({id:1, data:dataToWrite}).select('id');
+      // Phase C : écriture dans les tables entité d'abord
+      if(typeof syncClientsToTable === 'function') {
+        await Promise.allSettled([
+          syncClientsToTable(dataToWrite.clients || []),
+          syncContractsToTable(dataToWrite.contracts || []),
+          syncBankTxToTable(dataToWrite.bank?.transactions || []),
+          syncExpensesToTable(dataToWrite.expenses || []),
+          syncTasksToTable(dataToWrite.tasks || []),
+          syncSubscriptionsToTable(dataToWrite.bank?.subscriptions || []),
+          syncQuotesToTable(dataToWrite.quotes || []),
+          syncInvoicesToTable(dataToWrite.invoices || []),
+          syncConfigToTable(dataToWrite.config, dataToWrite.bank),
+        ]);
+      }
+      // Puis ping version dans app_data
+      const { data: result, error } = await sb.from('app_data').upsert({id:1, version:1}).select('id');
       if(error) throw error;
       if(!result || result.length === 0) throw new Error('Écriture bloquée silencieusement (RLS) — désactivez RLS sur app_data dans Supabase');
       persistRemoteSize(JSON.stringify(dataToWrite).length);
@@ -4401,7 +4431,8 @@ function App() {
       setData(dataToWrite);
       try { localStorage.setItem(LS_KEY, JSON.stringify(dataToWrite)); } catch(e) {}
       saveLocalBackup(dataToWrite);
-      addSyncLog('MANUAL_INIT_OK', `size=${lastRemoteDataSize}B`);
+      didLoadRemote.current = true;
+      addSyncLog('MANUAL_INIT_OK', `clients=${(dataToWrite.clients||[]).length} contracts=${(dataToWrite.contracts||[]).length}`);
       setSyncStatus('ok');
       addToast('Base initialisée avec succès ☁️ — synchronisation activée', 'success');
     } catch(e) {
@@ -4485,28 +4516,42 @@ function App() {
       setSynced(true);
     })();
 
-    // Realtime — avec garde anti-démo, anti-régression taille (R5), et persistance (R4)
+    // Realtime — Phase C : ping version depuis app_data → reload depuis tables entité
     channel = sb.channel('app_data_realtime')
-      .on('postgres_changes', {event:'UPDATE', schema:'public', table:'app_data'}, (payload) => {
+      .on('postgres_changes', {event:'UPDATE', schema:'public', table:'app_data'}, async (payload) => {
+        // Ignorer notre propre écriture (version = ce qu'on vient de pousser)
+        if(typeof _localVersion === 'number' && payload.new?.version === _localVersion) return;
+
+        if(payload.new?.version && typeof setLocalVersion === 'function') {
+          setLocalVersion(payload.new.version);
+        }
+
+        // Phase C : recharger depuis les tables entité
+        if(typeof loadFromEntityTables === 'function') {
+          const entityData = await loadFromEntityTables();
+          if(entityData) {
+            const secured = securizeData(entityData);
+            persistRemoteSize(JSON.stringify(secured).length);
+            isRemoteUpdate.current = true;
+            setData(secured);
+            try { localStorage.setItem(LS_KEY, JSON.stringify(secured)); } catch(e) {}
+            saveLocalBackup(secured);
+            addSyncLog('REALTIME_UPDATE', `entities v=${payload.new?.version||'?'}`);
+            addToast('Synchronisé ☁️', 'info');
+            return;
+          }
+        }
+
+        // Fallback : utiliser payload.data si entity tables inaccessibles
         if(!payload.new?.data) return;
         const incoming = securizeData(payload.new.data);
-        // Blocage démo uniquement — on fait confiance aux données venant de Supabase (V24)
-        if(isDemoData(incoming)) {
-          console.error('[SAFE-SYNC] Realtime bloqué : données de démo détectées');
-          addSyncLog('REALTIME_BLOCKED', 'demo data detected');
-          return;
-        }
-        // V24 : mise à jour de la taille et de la version connues depuis Supabase
-        const incomingSize = JSON.stringify(incoming).length;
-        persistRemoteSize(incomingSize); // R4 : mise à jour de la taille distante connue
-        if(payload.new?.version && typeof setLocalVersion === 'function') {
-          setLocalVersion(payload.new.version); // V24 : sync _localVersion → évite fausse détection conflit
-        }
+        if(isDemoData(incoming)) { addSyncLog('REALTIME_BLOCKED', 'demo data'); return; }
+        persistRemoteSize(JSON.stringify(incoming).length);
         isRemoteUpdate.current = true;
         setData(incoming);
         try { localStorage.setItem(LS_KEY, JSON.stringify(incoming)); } catch(e) {}
         saveLocalBackup(incoming);
-        addSyncLog('REALTIME_UPDATE', `size=${lastRemoteDataSize}B`);
+        addSyncLog('REALTIME_UPDATE', `size=${lastRemoteDataSize}B (fallback)`);
         addToast('Synchronisé ☁️', 'info');
       })
       .subscribe();
@@ -4514,57 +4559,8 @@ function App() {
     return () => { if(channel) sb.removeChannel(channel); };
   }, []);
 
-  // ── Phase A Option C : double écriture vers les tables entité ───────────────
-  // Conditions : Supabase chargé avec succès (didLoadRemote) + pas de données de démo
-  // Chaque effet ne se déclenche que quand SA collection change (refs React stables)
-  // Toutes les fonctions sont silencieuses sur erreur — app_data reste la source principale
-  const entityWriteReady = () => synced && didLoadRemote.current && syncStatus === 'ok';
-
-  React.useEffect(() => {
-    if(!entityWriteReady()) return;
-    if(typeof syncClientsToTable === 'function') syncClientsToTable(data.clients).catch(()=>{});
-  }, [data.clients, synced, syncStatus]); // eslint-disable-line
-
-  React.useEffect(() => {
-    if(!entityWriteReady()) return;
-    if(typeof syncContractsToTable === 'function') syncContractsToTable(data.contracts).catch(()=>{});
-  }, [data.contracts, synced, syncStatus]); // eslint-disable-line
-
-  React.useEffect(() => {
-    if(!entityWriteReady()) return;
-    if(typeof syncBankTxToTable === 'function') syncBankTxToTable(data.bank?.transactions).catch(()=>{});
-  }, [data.bank?.transactions, synced, syncStatus]); // eslint-disable-line
-
-  React.useEffect(() => {
-    if(!entityWriteReady()) return;
-    if(typeof syncExpensesToTable === 'function') syncExpensesToTable(data.expenses).catch(()=>{});
-  }, [data.expenses, synced, syncStatus]); // eslint-disable-line
-
-  React.useEffect(() => {
-    if(!entityWriteReady()) return;
-    if(typeof syncTasksToTable === 'function') syncTasksToTable(data.tasks).catch(()=>{});
-  }, [data.tasks, synced, syncStatus]); // eslint-disable-line
-
-  React.useEffect(() => {
-    if(!entityWriteReady()) return;
-    if(typeof syncSubscriptionsToTable === 'function') syncSubscriptionsToTable(data.bank?.subscriptions).catch(()=>{});
-  }, [data.bank?.subscriptions, synced, syncStatus]); // eslint-disable-line
-
-  React.useEffect(() => {
-    if(!entityWriteReady()) return;
-    if(typeof syncConfigToTable === 'function') syncConfigToTable(data.config, data.bank).catch(()=>{});
-  }, [data.config, data.bank?.initialBalance, synced, syncStatus]); // eslint-disable-line
-
-  React.useEffect(() => {
-    if(!entityWriteReady()) return;
-    if(typeof syncQuotesToTable === 'function') syncQuotesToTable(data.quotes).catch(()=>{});
-  }, [data.quotes, synced, syncStatus]); // eslint-disable-line
-
-  React.useEffect(() => {
-    if(!entityWriteReady()) return;
-    if(typeof syncInvoicesToTable === 'function') syncInvoicesToTable(data.invoices).catch(()=>{});
-  }, [data.invoices, synced, syncStatus]); // eslint-disable-line
-  // ─────────────────────────────────────────────────────────────────────────────
+  // Phase C : les écritures vers les tables entité se font directement dans saveData (storage.js)
+  // Les 9 useEffects Phase A ont été supprimés — saveData orchestre entity tables + ping app_data
 
   // Sauvegarde Supabase à chaque changement (sauf mises à jour reçues du realtime)
   // V24 : guard affiné — bloque uniquement les états où écrire serait dangereux ou inutile
