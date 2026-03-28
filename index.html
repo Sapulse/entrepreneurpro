@@ -4423,7 +4423,7 @@ function App() {
         ]);
       }
       // Puis ping version dans app_data
-      const { data: result, error } = await sb.from('app_data').upsert({id:1, version:1}).select('id');
+      const { data: result, error } = await sb.from('app_data').upsert({id:1, version:1, data:{}}).select('id');
       if(error) throw error;
       if(!result || result.length === 0) throw new Error('Écriture bloquée silencieusement (RLS) — désactivez RLS sur app_data dans Supabase');
       persistRemoteSize(JSON.stringify(dataToWrite).length);

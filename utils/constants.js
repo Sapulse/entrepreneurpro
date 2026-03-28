@@ -3,7 +3,7 @@
 // Aucune dépendance externe. Chargé avant les autres modules.
 // ============================================================
 
-const APP_VERSION = "V28 – Option C Phase C : app_data remplacé par tables entité";
+const APP_VERSION = "V29 – Stabilisation Option C : crm_actions, expenses, FK tasks/bank";
 const SCHEMA_VERSION = 3;
 const LS_KEY = "entrepreneurpro_v14_data";
 const UI_PREFS_KEY = "entrepreneurpro_ui_prefs";
