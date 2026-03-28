@@ -25,6 +25,10 @@ function persistRemoteSize(size) {
 // Callback global pour mettre à jour syncStatus depuis les fonctions module-level (R3/R8)
 let _onSyncStatusChange = null;
 
+// Version de la ligne app_data connue localement — pour détection de conflit multi-utilisateur (V23)
+let _localVersion = 0;
+function setLocalVersion(v) { _localVersion = Math.max(0, parseInt(v) || 0); }
+
 // Détecte si un dataset contient des empreintes de données de démo
 function isDemoData(d) {
   if(!d) return false;
