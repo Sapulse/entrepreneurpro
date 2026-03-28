@@ -53,9 +53,27 @@ async function syncClientsToTable(clients) {
     if(error) {
       console.warn('[ENTITIES] clients:', error.message);
       addSyncLog('ENTITY_ERR', `clients: ${error.code} ${error.message}`);
-    } else {
-      addSyncLog('ENTITY_OK', `clients ×${rows.length}`);
+      return;
     }
+
+    // crm_actions liées aux clients
+    const actionRows = clients.flatMap(c =>
+      (c.actions || []).map(a => ({
+        id:        a.id,
+        client_id: c.id,
+        type:      a.type     || '',
+        contenu:   a.contenu  || '',
+        date:      a.date     || null,
+        assignee:  a.assignee || a.auteur || '',
+      }))
+    );
+    const allActionIds = actionRows.map(a => a.id);
+    await _deleteOrphans('crm_actions', allActionIds);
+    if(actionRows.length > 0) {
+      const { error: aErr } = await sb.from('crm_actions').upsert(actionRows);
+      if(aErr) console.warn('[ENTITIES] crm_actions:', aErr.message);
+    }
+    addSyncLog('ENTITY_OK', `clients ×${rows.length} actions ×${actionRows.length}`);
   } catch(e) { console.warn('[ENTITIES] clients exception:', e.message); }
 }
 
@@ -150,8 +168,9 @@ async function syncBankTxToTable(transactions) {
       date:     tx.date     || null,
       auteur:   tx.auteur   || '',
       // Le champ a un accent dans l'app — on accepte les deux formes
-      impute_a: tx['imputéÀ'] || tx.imputeA || tx.impute_a || '',
-      statut:   tx.statut   || '',
+      impute_a:    tx['imputéÀ']  || tx.imputeA || tx.impute_a || '',
+      contract_id: tx.contractId  || tx.contract_id || null,
+      statut:      tx.statut      || '',
     }));
     const { error } = await sb.from('bank_transactions').upsert(rows);
     if(error) {
@@ -184,6 +203,8 @@ async function syncExpensesToTable(expenses) {
       paye_par:     e.payePar     || e.paye_par || '',
       date:         e.date        || null,
       refacturable: Boolean(e.refacturable),
+      impute:       e.impute      || '',
+      justificatif: e.justificatif || '',
       notes:        e.notes       || '',
     }));
     const { error } = await sb.from('expenses').upsert(rows);
@@ -211,13 +232,15 @@ async function syncTasksToTable(tasks) {
     if(tasks.length === 0) { addSyncLog('ENTITY_OK', 'tasks ×0'); return; }
     const rows = tasks.map(t => ({
       id:          t.id,
-      titre:       t.titre       || '',
-      client_name: t.client      || '',
-      assigned_to: t.assignedTo  || t.assigned_to || '',
-      statut:      t.statut      || 'À faire',
-      priorite:    t.priorite    || 'Moyenne',
-      echeance:    t.echeance    || null,
-      notes:       t.notes       || '',
+      titre:       t.titre        || '',
+      client_name: t.client       || '',
+      client_id:   t.clientId     || t.client_id   || null,
+      contract_id: t.contractId   || t.contract_id || null,
+      assigned_to: t.assignedTo   || t.assigned_to || '',
+      statut:      t.statut       || 'À faire',
+      priorite:    t.priorite     || 'Moyenne',
+      echeance:    t.echeance     || null,
+      notes:       t.notes        || '',
     }));
     const { error } = await sb.from('tasks').upsert(rows);
     if(error) {
@@ -364,6 +387,7 @@ async function loadFromEntityTables() {
       { data: quoteRows,    error: e8 },
       { data: invoiceRows,  error: e9 },
       { data: configRow,    error: e10 },
+      { data: actionRows },
     ] = await Promise.all([
       sb.from('clients').select('*'),
       sb.from('contracts').select('*'),
@@ -375,6 +399,7 @@ async function loadFromEntityTables() {
       sb.from('quotes').select('*'),
       sb.from('invoices').select('*'),
       sb.from('app_config').select('*').eq('id', 1).single(),
+      sb.from('crm_actions').select('*'),
     ]);
 
     // Tables critiques inaccessibles → fallback app_data
@@ -399,7 +424,15 @@ async function loadFromEntityTables() {
       potentiel:  r.potentiel   || 0,
       notes:      r.notes       || '',
       dateEntree: r.date_entree || null,
-      actions:    [],
+      actions: (actionRows || [])
+        .filter(a => a.client_id === r.id)
+        .map(a => ({
+          id:       a.id,
+          type:     a.type     || '',
+          contenu:  a.contenu  || '',
+          date:     a.date     || null,
+          assignee: a.assignee || '',
+        })),
     }));
 
     // contracts : colonnes SQL → champs app
