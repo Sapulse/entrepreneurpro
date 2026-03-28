@@ -106,16 +106,16 @@ function saveData(d) {
     // Ping de sync : incrément de version dans app_data — plus de blob data
     // Si la colonne version n'existe pas encore (PGRST204), on réessaie sans version
     const newVersion = (_localVersion > 0 ? _localVersion : 0) + 1;
+    // data:{} satisfait la contrainte NOT NULL tout en restant un payload minimal
     let { data: result, error } = await sb.from('app_data')
-      .upsert({ id: 1, version: newVersion })
+      .upsert({ id: 1, version: newVersion, data: {} })
       .select('id');
 
     if(error && error.code === 'PGRST204' && error.message?.includes('version')) {
-      // Colonne version absente — ping sans version (tables entité déjà écrites)
-      const retry = await sb.from('app_data').upsert({ id: 1 }).select('id');
+      // Colonne version absente — ping sans version
+      const retry = await sb.from('app_data').upsert({ id: 1, data: {} }).select('id');
       result = retry.data;
       error  = retry.error;
-      if(!error) addSyncLog('WRITE_OK', 'entities synced (no version col — run: ALTER TABLE app_data ADD COLUMN version INTEGER DEFAULT 0)');
     }
 
     if(error) {
