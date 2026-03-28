@@ -9,6 +9,22 @@
 // ============================================================
 
 // ------------------------------------------------------------------
+// Helper : supprime les lignes d'une table dont l'id n'est plus dans currentIds
+// ------------------------------------------------------------------
+async function _deleteOrphans(table, currentIds) {
+  if(currentIds.length === 0) {
+    // Tout supprimer (cas extrême : collection vidée)
+    await sb.from(table).delete().not('id', 'is', null);
+    return;
+  }
+  const { data: existing } = await sb.from(table).select('id');
+  const toDelete = (existing || []).map(r => r.id).filter(id => !currentIds.includes(id));
+  if(toDelete.length > 0) {
+    await sb.from(table).delete().in('id', toDelete);
+  }
+}
+
+// ------------------------------------------------------------------
 // clients  (Priorité 1)
 // Mapping : app { id, entreprise, nom, email, telephone, source,
 //                 etape, potentiel, notes, dateEntree }
@@ -16,8 +32,11 @@
 //               etape, potentiel, notes, date_entree }
 // ------------------------------------------------------------------
 async function syncClientsToTable(clients) {
-  if(!Array.isArray(clients) || clients.length === 0) return;
+  if(!Array.isArray(clients)) return;
   try {
+    const currentIds = clients.map(c => c.id);
+    await _deleteOrphans('clients', currentIds);
+    if(clients.length === 0) { addSyncLog('ENTITY_OK', 'clients ×0'); return; }
     const rows = clients.map(c => ({
       id:          c.id,
       entreprise:  c.entreprise  || '',
@@ -57,8 +76,11 @@ async function syncClientsToTable(clients) {
 //                                         type, statut, auteur, opco_statut, notes }
 // ------------------------------------------------------------------
 async function syncContractsToTable(contracts) {
-  if(!Array.isArray(contracts) || contracts.length === 0) return;
+  if(!Array.isArray(contracts)) return;
   try {
+    const currentIds = contracts.map(c => c.id);
+    await _deleteOrphans('contracts', currentIds);
+    if(contracts.length === 0) { addSyncLog('ENTITY_OK', 'contracts ×0 payments ×0'); return; }
     const contractRows = contracts.map(c => ({
       id:             c.id,
       client_id:      c.clientId      || null,
@@ -97,6 +119,9 @@ async function syncContractsToTable(contracts) {
         notes:       p.notes       || '',
       }))
     );
+    // Sync payments : supprime les paiements orphelins, upsert les actuels
+    const allPaymentIds = paymentRows.map(p => p.id);
+    await _deleteOrphans('contract_payments', allPaymentIds);
     if(paymentRows.length > 0) {
       const { error: pErr } = await sb.from('contract_payments').upsert(paymentRows);
       if(pErr) console.warn('[ENTITIES] contract_payments:', pErr.message);
@@ -112,8 +137,11 @@ async function syncContractsToTable(contracts) {
 //       → SQL { id, label, montant, type, date, auteur, impute_a, statut }
 // ------------------------------------------------------------------
 async function syncBankTxToTable(transactions) {
-  if(!Array.isArray(transactions) || transactions.length === 0) return;
+  if(!Array.isArray(transactions)) return;
   try {
+    const currentIds = transactions.map(tx => tx.id);
+    await _deleteOrphans('bank_transactions', currentIds);
+    if(transactions.length === 0) { addSyncLog('ENTITY_OK', 'bank_transactions ×0'); return; }
     const rows = transactions.map(tx => ({
       id:       tx.id,
       label:    tx.label    || '',
@@ -143,8 +171,11 @@ async function syncBankTxToTable(transactions) {
 //               refacturable, notes }
 // ------------------------------------------------------------------
 async function syncExpensesToTable(expenses) {
-  if(!Array.isArray(expenses) || expenses.length === 0) return;
+  if(!Array.isArray(expenses)) return;
   try {
+    const currentIds = expenses.map(e => e.id);
+    await _deleteOrphans('expenses', currentIds);
+    if(expenses.length === 0) { addSyncLog('ENTITY_OK', 'expenses ×0'); return; }
     const rows = expenses.map(e => ({
       id:           e.id,
       label:        e.titre       || e.label || '',
@@ -173,8 +204,11 @@ async function syncExpensesToTable(expenses) {
 //               echeance, notes }
 // ------------------------------------------------------------------
 async function syncTasksToTable(tasks) {
-  if(!Array.isArray(tasks) || tasks.length === 0) return;
+  if(!Array.isArray(tasks)) return;
   try {
+    const currentIds = tasks.map(t => t.id);
+    await _deleteOrphans('tasks', currentIds);
+    if(tasks.length === 0) { addSyncLog('ENTITY_OK', 'tasks ×0'); return; }
     const rows = tasks.map(t => ({
       id:          t.id,
       titre:       t.titre       || '',
@@ -201,8 +235,11 @@ async function syncTasksToTable(tasks) {
 //       → SQL { id, label, montant, frequence, auteur, actif }
 // ------------------------------------------------------------------
 async function syncSubscriptionsToTable(subscriptions) {
-  if(!Array.isArray(subscriptions) || subscriptions.length === 0) return;
+  if(!Array.isArray(subscriptions)) return;
   try {
+    const currentIds = subscriptions.map(s => s.id);
+    await _deleteOrphans('bank_subscriptions', currentIds);
+    if(subscriptions.length === 0) { addSyncLog('ENTITY_OK', 'subscriptions ×0'); return; }
     const rows = subscriptions.map(s => ({
       id:        s.id,
       label:     s.label     || '',
@@ -251,8 +288,11 @@ async function syncConfigToTable(config, bank) {
 // Stocke les colonnes indexées + objet complet en JSONB pour round-trip sans perte
 // ------------------------------------------------------------------
 async function syncQuotesToTable(quotes) {
-  if(!Array.isArray(quotes) || quotes.length === 0) return;
+  if(!Array.isArray(quotes)) return;
   try {
+    const currentIds = quotes.map(q => q.id);
+    await _deleteOrphans('quotes', currentIds);
+    if(quotes.length === 0) { addSyncLog('ENTITY_OK', 'quotes ×0'); return; }
     const rows = quotes.map(q => ({
       id:              q.id,
       client_id:       q.clientId       || null,
@@ -279,8 +319,11 @@ async function syncQuotesToTable(quotes) {
 // invoices  (Priorité 7b)
 // ------------------------------------------------------------------
 async function syncInvoicesToTable(invoices) {
-  if(!Array.isArray(invoices) || invoices.length === 0) return;
+  if(!Array.isArray(invoices)) return;
   try {
+    const currentIds = invoices.map(i => i.id);
+    await _deleteOrphans('invoices', currentIds);
+    if(invoices.length === 0) { addSyncLog('ENTITY_OK', 'invoices ×0'); return; }
     const rows = invoices.map(i => ({
       id:           i.id,
       client_id:    i.clientId     || null,
