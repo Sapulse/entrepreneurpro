@@ -13,14 +13,15 @@
 
 <!-- Couche données & sécurité — chargée avant Babel, indépendamment auditable -->
 <!-- Ordre de chargement : supabase → constants → formatters → periods → calculators → security → backup → storage -->
-<script src="sync/supabase.js"></script>
-<script src="utils/constants.js"></script>
-<script src="utils/formatters.js"></script>
-<script src="utils/periods.js"></script>
-<script src="utils/calculators.js"></script>
-<script src="sync/security.js"></script>
-<script src="sync/backup.js"></script>
-<script src="sync/storage.js"></script>
+<!-- ?v=23 : cache-busting — à incrémenter à chaque déploiement -->
+<script src="sync/supabase.js?v=23"></script>
+<script src="utils/constants.js?v=23"></script>
+<script src="utils/formatters.js?v=23"></script>
+<script src="utils/periods.js?v=23"></script>
+<script src="utils/calculators.js?v=23"></script>
+<script src="sync/security.js?v=23"></script>
+<script src="sync/backup.js?v=23"></script>
+<script src="sync/storage.js?v=23"></script>
 <style>
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -4306,11 +4307,13 @@ function App() {
           saveLocalBackup(remote);
           // V23 : récupère la version distante séparément (optionnel — silencieux si colonne absente)
           sb.from('app_data').select('version').eq('id', 1).single().then(({data: vrow}) => {
-            if(vrow && typeof vrow.version === 'number') setLocalVersion(vrow.version);
+            if(vrow && typeof vrow.version === 'number' && typeof setLocalVersion === 'function') setLocalVersion(vrow.version);
           }).catch(() => {});
           addSyncLog('LOAD_OK', `size=${lastRemoteDataSize}B`);
           // V23 : snapshot de démarrage (une fois par session, silencieux si table absente)
-          if(shouldCreateStartupSnapshot()) createSnapshot('startup').catch(() => {});
+          if(typeof shouldCreateStartupSnapshot === 'function' && shouldCreateStartupSnapshot()) {
+            if(typeof createSnapshot === 'function') createSnapshot('startup').catch(() => {});
+          }
           setSyncStatus('ok');
         } else if(error && (error.code === 'PGRST116' || error.details?.includes('0 rows'))) {
           // CAS VIDE : la ligne n'existe pas encore — JAMAIS d'upsert automatique
