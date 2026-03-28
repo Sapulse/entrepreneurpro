@@ -66,46 +66,57 @@ function loadData() {
 }
 
 // Écriture vers localStorage + Supabase avec validation obligatoire
-// V23 : vérifie la version distante avant d'écrire (détection conflit multi-utilisateur)
-// IMPORTANT : ne jamais appeler sans passer par le useEffect guard (syncStatus === 'ok')
+// V24 : payload simplifié ({id,data} uniquement), détection des blocages silencieux RLS,
+//       validation failures rendent syncStatus='error' (plus de silence)
 function saveData(d) {
   // Écriture locale systématique
   try { localStorage.setItem(LS_KEY, JSON.stringify(d)); } catch(e) {}
 
-  // Validation obligatoire avant tout upsert distant
-  const validation = validateBeforeWrite(d);
-  if(!validation.ok) {
-    console.error('[SAFE-SYNC]', validation.msg);
-    addSyncLog('WRITE_BLOCKED', validation.reason);
+  // Seule garde absolue conservée : jamais écrire les données de démo
+  if(isDemoData(d)) {
+    console.error('[SAFE-SYNC] WRITE_BLOCKED — données de démo détectées');
+    addSyncLog('WRITE_BLOCKED', 'DEMO_DATA');
+    if(_onSyncStatusChange) _onSyncStatusChange('error'); // V24 : rendu visible
     return;
   }
 
   const size = JSON.stringify(d).length;
+  console.log('[SAFE-SYNC] saveData → upsert Supabase, size=', size);
 
   (async () => {
-    // V23 : vérification de version pour détecter les conflits multi-utilisateur
+    // V23 : vérification de version (uniquement si migration effectuée, _localVersion > 0)
     if(_localVersion > 0) {
       const { data: row } = await sb.from('app_data').select('version').eq('id', 1).single();
       if(row && typeof row.version === 'number' && row.version !== _localVersion) {
         addSyncLog('CONFLICT_DETECTED', `local_v=${_localVersion} remote_v=${row.version}`);
         if(_onSyncStatusChange) _onSyncStatusChange('conflict');
-        return; // Écriture bloquée — l'utilisateur doit résoudre manuellement
+        return;
       }
     }
 
-    const newVersion = (_localVersion || 0) + 1;
-    const payload = _localVersion > 0
-      ? {id: 1, data: d, version: newVersion, updated_at: new Date().toISOString()}
-      : {id: 1, data: d, updated_at: new Date().toISOString()};
-    const { error } = await sb.from('app_data').upsert(payload);
+    // Payload minimal — seuls id et data, sans updated_at ni version (compatibles avec tout schéma)
+    const payload = {id: 1, data: d};
+    if(_localVersion > 0) {
+      payload.version = (_localVersion || 0) + 1;
+    }
+
+    // V24 : .select('id') pour détecter les blocages silencieux RLS (Supabase renvoie [] sans erreur)
+    const { data: result, error } = await sb.from('app_data').upsert(payload).select('id');
+
     if(error) {
-      console.error('[SAFE-SYNC] Supabase save error:', error);
-      addSyncLog('WRITE_ERROR', error.message);
+      console.error('[SAFE-SYNC] Supabase upsert error:', error.code, error.message);
+      addSyncLog('WRITE_ERROR', `${error.code}: ${error.message}`);
+      if(_onSyncStatusChange) _onSyncStatusChange('error');
+    } else if(!result || result.length === 0) {
+      // RLS silencieux : upsert "réussi" mais aucune ligne affectée → permission refusée
+      console.error('[SAFE-SYNC] Upsert silencieusement bloqué (RLS ?) — aucune ligne affectée');
+      addSyncLog('WRITE_SILENT_BLOCK', `size=${size}B — vérifier les politiques RLS Supabase`);
       if(_onSyncStatusChange) _onSyncStatusChange('error');
     } else {
-      if(_localVersion > 0) _localVersion = newVersion;
+      if(_localVersion > 0) _localVersion = payload.version;
       persistRemoteSize(size);
       addSyncLog('WRITE_OK', `size=${size}B v=${_localVersion}`);
+      console.log('[SAFE-SYNC] Sauvegarde Supabase OK, size=', size);
       if(_onSyncStatusChange) _onSyncStatusChange('ok');
     }
   })();
