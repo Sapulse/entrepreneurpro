@@ -4071,6 +4071,56 @@ function SnapshotModal({onClose, onRollback}) {
   );
 }
 
+// V24 : Indicateur de sync cliquable → affiche le journal de sync pour diagnostic
+function SyncStatusButton({syncStatus}) {
+  const [open, setOpen] = React.useState(false);
+  const log = React.useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('entrepreneurpro_sync_log') || '[]').slice(0, 20); } catch(e) { return []; }
+  }, [open]);
+
+  const colorClass = syncStatus==='ok' ? 'text-green-600' : syncStatus==='empty' ? 'text-amber-600' :
+    syncStatus==='loading' ? 'text-gray-400' : syncStatus==='conflict' ? 'text-orange-600' : 'text-red-500';
+  const icon = syncStatus==='ok'?'☁️':syncStatus==='empty'?'🟡':syncStatus==='loading'?'⏳':syncStatus==='conflict'?'⚡':'⚠️';
+  const label = syncStatus==='ok'?'Supabase connecté':syncStatus==='empty'?'Base distante vide':
+    syncStatus==='loading'?'Connexion...':syncStatus==='conflict'?'Conflit détecté':'Erreur sync – mode local';
+
+  return (<>
+    <button onClick={()=>setOpen(true)} title="Cliquer pour voir le journal de synchronisation"
+      className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium ${colorClass} hover:bg-gray-50 transition-colors text-left`}>
+      <span>{icon}</span>{label}
+    </button>
+    {open && (
+      <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center bg-black/40" onClick={()=>setOpen(false)}>
+        <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-lg p-4 max-h-96 flex flex-col" onClick={e=>e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="font-semibold text-gray-800 text-sm">Journal de synchronisation</div>
+            <button onClick={()=>setOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+          </div>
+          <div className="text-xs text-gray-500 mb-2">Statut actuel : <span className={`font-semibold ${colorClass}`}>{icon} {label}</span></div>
+          <div className="overflow-y-auto flex-1 space-y-1">
+            {log.length === 0 && <div className="text-xs text-gray-400 text-center py-4">Aucune entrée dans le journal</div>}
+            {log.map((entry, i) => (
+              <div key={i} className={`text-xs px-2 py-1 rounded font-mono ${
+                entry.action?.includes('ERROR')||entry.action?.includes('BLOCK') ? 'bg-red-50 text-red-700' :
+                entry.action?.includes('OK') ? 'bg-green-50 text-green-700' :
+                entry.action?.includes('CONFLICT') ? 'bg-orange-50 text-orange-700' :
+                'bg-gray-50 text-gray-600'
+              }`}>
+                <span className="text-gray-400">{entry.ts?.slice(11,19)}</span>{' '}
+                <span className="font-bold">{entry.action}</span>{' '}
+                <span className="opacity-75">{entry.detail}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
+            Consultez aussi la console navigateur (F12) pour les erreurs détaillées
+          </div>
+        </div>
+      </div>
+    )}
+  </>);
+}
+
 function Sidebar({active, onChange, onExport, onImport, onSnapshots, version, sidebarOpen, setSidebarOpen, syncStatus, onSearch, onAlerts, alertCount}) {
   const fileRef = React.useRef();
   const dragNavItem = React.useRef(null);
@@ -4179,20 +4229,7 @@ function Sidebar({active, onChange, onExport, onImport, onSnapshots, version, si
           <span>📸</span> Snapshots cloud
         </button>
         <input type="file" ref={fileRef} accept=".json" className="hidden" onChange={handleImportFile}/>
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium ${
-          syncStatus==='ok' ? 'text-green-600' :
-          syncStatus==='empty' ? 'text-amber-600' :
-          syncStatus==='loading' ? 'text-gray-400' :
-          syncStatus==='conflict' ? 'text-orange-600' :
-          'text-red-500'
-        }`}>
-          <span>{syncStatus==='ok'?'☁️':syncStatus==='empty'?'🟡':syncStatus==='loading'?'⏳':syncStatus==='conflict'?'⚡':'⚠️'}</span>
-          {syncStatus==='ok' ? 'Supabase connecté' :
-           syncStatus==='empty' ? 'Base distante vide' :
-           syncStatus==='loading' ? 'Connexion...' :
-           syncStatus==='conflict' ? 'Conflit détecté' :
-           'Erreur sync – mode local'}
-        </div>
+        <SyncStatusButton syncStatus={syncStatus}/>
       </div>
     </div>
   );
@@ -4524,21 +4561,25 @@ function App() {
         </div>
       )}
 
-      {/* V21 – Bannière erreur de synchronisation */}
-      {syncStatus === 'error' && (
+      {/* V21/V24 – Bannière erreur de synchronisation */}
+      {syncStatus === 'error' && (() => {
+        const lastErr = (() => { try { const l=JSON.parse(localStorage.getItem('entrepreneurpro_sync_log')||'[]'); const e=l.find(x=>x.action?.includes('ERROR')||x.action?.includes('BLOCK')); return e?.detail||''; } catch(e){return '';} })();
+        return (
         <div className="md:ml-60 fixed top-0 left-0 right-0 z-10">
-          <div className="bg-red-50 border-b-2 border-red-300 px-4 py-2 flex items-center gap-2">
+          <div className="bg-red-50 border-b-2 border-red-300 px-4 py-2 flex items-center gap-2 flex-wrap">
             <span className="text-red-500">⚠️</span>
-            <div className="flex-1">
-              <span className="font-semibold text-red-700 text-xs">Erreur de connexion Supabase</span>
-              <span className="text-red-600 text-xs ml-2">— Mode local actif. Vos modifications sont sauvegardées localement mais pas synchronisées.</span>
+            <div className="flex-1 min-w-0">
+              <span className="font-semibold text-red-700 text-xs">Erreur de synchronisation Supabase</span>
+              <span className="text-red-600 text-xs ml-2">— Modifications sauvegardées localement. Cliquez sur l'indicateur ☁️ en bas de la sidebar pour voir le journal.</span>
+              {lastErr && <div className="text-red-500 text-xs mt-0.5 font-mono truncate">{lastErr}</div>}
             </div>
-            <button onClick={()=>doExport(data)} className="px-2 py-1 bg-red-100 border border-red-300 text-red-700 text-xs rounded hover:bg-red-200 transition-colors">
+            <button onClick={()=>doExport(data)} className="px-2 py-1 bg-red-100 border border-red-300 text-red-700 text-xs rounded hover:bg-red-200 transition-colors shrink-0">
               Exporter JSON
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* V23 – Bannière conflit multi-utilisateur */}
       {syncStatus === 'conflict' && (
