@@ -13,15 +13,14 @@
 
 <!-- Couche données & sécurité — chargée avant Babel, indépendamment auditable -->
 <!-- Ordre de chargement : supabase → constants → formatters → periods → calculators → security → backup → storage -->
-<!-- ?v=23 : cache-busting — à incrémenter à chaque déploiement -->
-<script src="sync/supabase.js?v=23"></script>
-<script src="utils/constants.js?v=23"></script>
-<script src="utils/formatters.js?v=23"></script>
-<script src="utils/periods.js?v=23"></script>
-<script src="utils/calculators.js?v=23"></script>
-<script src="sync/security.js?v=23"></script>
-<script src="sync/backup.js?v=23"></script>
-<script src="sync/storage.js?v=23"></script>
+<script src="sync/supabase.js"></script>
+<script src="utils/constants.js"></script>
+<script src="utils/formatters.js"></script>
+<script src="utils/periods.js"></script>
+<script src="utils/calculators.js"></script>
+<script src="sync/security.js"></script>
+<script src="sync/backup.js"></script>
+<script src="sync/storage.js"></script>
 <style>
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -4250,7 +4249,7 @@ function App() {
 
   // V23 : rappel export automatique si dernier export > 7 jours
   React.useEffect(() => {
-    if(shouldAutoExport()) setAutoExportBanner(true);
+    if(typeof shouldAutoExport === 'function' && shouldAutoExport()) setAutoExportBanner(true);
   }, []);
 
   const handleManualInit = React.useCallback(async (sourceLabel, dataToWrite) => {
