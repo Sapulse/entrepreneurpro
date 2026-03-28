@@ -99,12 +99,13 @@ async function rollbackToSnapshot(snapshotId, onSuccess, onError) {
     try { localStorage.setItem(LS_KEY, JSON.stringify(d)); } catch(e) {}
 
     const newVersion = (_localVersion || 0) + 1;
-    const { error: writeErr } = await sb.from('app_data').upsert({
-      id: 1, data: d, version: newVersion, updated_at: new Date().toISOString()
-    });
+    const payload = _localVersion > 0
+      ? {id: 1, data: d, version: newVersion, updated_at: new Date().toISOString()}
+      : {id: 1, data: d, updated_at: new Date().toISOString()};
+    const { error: writeErr } = await sb.from('app_data').upsert(payload);
     if(writeErr) { onError(writeErr.message); return; }
 
-    _localVersion = newVersion;
+    if(_localVersion > 0) _localVersion = newVersion;
     persistRemoteSize(JSON.stringify(d).length);
     addSyncLog('ROLLBACK_OK', `snapshot_id=${snapshotId} v=${newVersion}`);
     onSuccess(d);

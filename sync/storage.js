@@ -94,17 +94,18 @@ function saveData(d) {
     }
 
     const newVersion = (_localVersion || 0) + 1;
-    const { error } = await sb.from('app_data').upsert({
-      id: 1, data: d, version: newVersion, updated_at: new Date().toISOString()
-    });
+    const payload = _localVersion > 0
+      ? {id: 1, data: d, version: newVersion, updated_at: new Date().toISOString()}
+      : {id: 1, data: d, updated_at: new Date().toISOString()};
+    const { error } = await sb.from('app_data').upsert(payload);
     if(error) {
       console.error('[SAFE-SYNC] Supabase save error:', error);
       addSyncLog('WRITE_ERROR', error.message);
       if(_onSyncStatusChange) _onSyncStatusChange('error');
     } else {
-      _localVersion = newVersion;
+      if(_localVersion > 0) _localVersion = newVersion;
       persistRemoteSize(size);
-      addSyncLog('WRITE_OK', `size=${size}B v=${newVersion}`);
+      addSyncLog('WRITE_OK', `size=${size}B v=${_localVersion}`);
       if(_onSyncStatusChange) _onSyncStatusChange('ok');
     }
   })();

@@ -4249,7 +4249,7 @@ function App() {
 
   // V23 : rappel export automatique si dernier export > 7 jours
   React.useEffect(() => {
-    if(shouldAutoExport()) setAutoExportBanner(true);
+    if(typeof shouldAutoExport === 'function' && shouldAutoExport()) setAutoExportBanner(true);
   }, []);
 
   const handleManualInit = React.useCallback(async (sourceLabel, dataToWrite) => {
@@ -4294,20 +4294,25 @@ function App() {
     let channel;
     (async () => {
       try {
-        const { data: rows, error } = await sb.from('app_data').select('data, version').eq('id', 1).single();
+        const { data: rows, error } = await sb.from('app_data').select('data').eq('id', 1).single();
 
         if (!error && rows && rows.data) {
           // CAS OK : données distantes chargées avec succès
           const remote = securizeData(rows.data);
           persistRemoteSize(JSON.stringify(remote).length); // R4 : persistance taille distante
-          setLocalVersion(rows.version || 1); // V23 : mémoriser la version pour détection conflit
           isRemoteUpdate.current = true;
           setData(remote);
           try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
           saveLocalBackup(remote);
-          addSyncLog('LOAD_OK', `size=${lastRemoteDataSize}B v=${rows.version||1}`);
-          // V23 : snapshot de démarrage (une fois par session)
-          if(shouldCreateStartupSnapshot()) createSnapshot('startup');
+          // V23 : récupère la version distante séparément (optionnel — silencieux si colonne absente)
+          sb.from('app_data').select('version').eq('id', 1).single().then(({data: vrow}) => {
+            if(vrow && typeof vrow.version === 'number' && typeof setLocalVersion === 'function') setLocalVersion(vrow.version);
+          }).catch(() => {});
+          addSyncLog('LOAD_OK', `size=${lastRemoteDataSize}B`);
+          // V23 : snapshot de démarrage (une fois par session, silencieux si table absente)
+          if(typeof shouldCreateStartupSnapshot === 'function' && shouldCreateStartupSnapshot()) {
+            if(typeof createSnapshot === 'function') createSnapshot('startup').catch(() => {});
+          }
           setSyncStatus('ok');
         } else if(error && (error.code === 'PGRST116' || error.details?.includes('0 rows'))) {
           // CAS VIDE : la ligne n'existe pas encore — JAMAIS d'upsert automatique
@@ -4505,7 +4510,7 @@ function App() {
             </div>
             <button
               onClick={async () => {
-                const { data: rows, error } = await sb.from('app_data').select('data, version').eq('id', 1).single();
+                const { data: rows, error } = await sb.from('app_data').select('data').eq('id', 1).single();
                 if(!error && rows?.data) {
                   const remote = securizeData(rows.data);
                   setLocalVersion(rows.version || 1);
