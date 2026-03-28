@@ -21,6 +21,7 @@
 <script src="sync/security.js"></script>
 <script src="sync/backup.js"></script>
 <script src="sync/storage.js"></script>
+<script src="sync/entities.js"></script>
 <style>
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -4494,6 +4495,48 @@ function App() {
 
     return () => { if(channel) sb.removeChannel(channel); };
   }, []);
+
+  // ── Phase A Option C : double écriture vers les tables entité ───────────────
+  // Conditions : Supabase chargé avec succès (didLoadRemote) + pas de données de démo
+  // Chaque effet ne se déclenche que quand SA collection change (refs React stables)
+  // Toutes les fonctions sont silencieuses sur erreur — app_data reste la source principale
+  const entityWriteReady = () => synced && didLoadRemote.current && syncStatus === 'ok';
+
+  React.useEffect(() => {
+    if(!entityWriteReady()) return;
+    if(typeof syncClientsToTable === 'function') syncClientsToTable(data.clients).catch(()=>{});
+  }, [data.clients, synced, syncStatus]); // eslint-disable-line
+
+  React.useEffect(() => {
+    if(!entityWriteReady()) return;
+    if(typeof syncContractsToTable === 'function') syncContractsToTable(data.contracts).catch(()=>{});
+  }, [data.contracts, synced, syncStatus]); // eslint-disable-line
+
+  React.useEffect(() => {
+    if(!entityWriteReady()) return;
+    if(typeof syncBankTxToTable === 'function') syncBankTxToTable(data.bank?.transactions).catch(()=>{});
+  }, [data.bank?.transactions, synced, syncStatus]); // eslint-disable-line
+
+  React.useEffect(() => {
+    if(!entityWriteReady()) return;
+    if(typeof syncExpensesToTable === 'function') syncExpensesToTable(data.expenses).catch(()=>{});
+  }, [data.expenses, synced, syncStatus]); // eslint-disable-line
+
+  React.useEffect(() => {
+    if(!entityWriteReady()) return;
+    if(typeof syncTasksToTable === 'function') syncTasksToTable(data.tasks).catch(()=>{});
+  }, [data.tasks, synced, syncStatus]); // eslint-disable-line
+
+  React.useEffect(() => {
+    if(!entityWriteReady()) return;
+    if(typeof syncSubscriptionsToTable === 'function') syncSubscriptionsToTable(data.bank?.subscriptions).catch(()=>{});
+  }, [data.bank?.subscriptions, synced, syncStatus]); // eslint-disable-line
+
+  React.useEffect(() => {
+    if(!entityWriteReady()) return;
+    if(typeof syncConfigToTable === 'function') syncConfigToTable(data.config, data.bank).catch(()=>{});
+  }, [data.config, data.bank?.initialBalance, synced, syncStatus]); // eslint-disable-line
+  // ─────────────────────────────────────────────────────────────────────────────
 
   // Sauvegarde Supabase à chaque changement (sauf mises à jour reçues du realtime)
   // V24 : guard affiné — bloque uniquement les états où écrire serait dangereux ou inutile

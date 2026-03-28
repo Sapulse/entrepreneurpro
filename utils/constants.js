@@ -3,7 +3,7 @@
 // Aucune dépendance externe. Chargé avant les autres modules.
 // ============================================================
 
-const APP_VERSION = "V25.1 – Correction démo Supabase + sync débloqué";
+const APP_VERSION = "V26 – Option C Phase A : double écriture tables entité";
 const SCHEMA_VERSION = 3;
 const LS_KEY = "entrepreneurpro_v14_data";
 const UI_PREFS_KEY = "entrepreneurpro_ui_prefs";
