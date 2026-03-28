@@ -4226,6 +4226,7 @@ function App() {
   const [showSnapshots, setShowSnapshots] = React.useState(false);
   const [autoExportBanner, setAutoExportBanner] = React.useState(false);
   const isRemoteUpdate = React.useRef(false);
+  const didLoadRemote = React.useRef(false); // V24 : true dès que Supabase a été lu avec succès au moins une fois
   const addToast = useToast();
 
   const alerts = React.useMemo(() => buildAlerts(data), [data]);
@@ -4251,6 +4252,44 @@ function App() {
   React.useEffect(() => {
     if(typeof shouldAutoExport === 'function' && shouldAutoExport()) setAutoExportBanner(true);
   }, []);
+
+  // V24 : résolution automatique des conflits — rechargement silencieux depuis Supabase
+  // Le conflit n'est déclenché que si la colonne `version` existe (migration V23 effectuée)
+  React.useEffect(() => {
+    if(syncStatus !== 'conflict') return;
+    (async () => {
+      try {
+        const { data: rows, error } = await sb.from('app_data').select('data, version').eq('id', 1).single();
+        if(!error && rows?.data) {
+          const remote = securizeData(rows.data);
+          if(rows.version && typeof setLocalVersion === 'function') setLocalVersion(rows.version);
+          persistRemoteSize(JSON.stringify(remote).length);
+          isRemoteUpdate.current = true;
+          setData(remote);
+          try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
+          addSyncLog('CONFLICT_AUTO_RESOLVED', `v=${rows.version||'?'}`);
+          addToast('Données rechargées depuis Supabase (conflit résolu automatiquement)', 'info');
+          setSyncStatus('ok');
+        }
+        // Si l'échec persiste, le banner conflit reste visible pour action manuelle
+      } catch(e) { console.warn('[SYNC] Auto-résolution conflit échouée:', e); }
+    })();
+  }, [syncStatus]);
+
+  // V24 : auto-retry en cas d'erreur réseau — tentative toutes les 30s
+  React.useEffect(() => {
+    if(syncStatus !== 'error') return;
+    const timer = setTimeout(async () => {
+      try {
+        const { error } = await sb.from('app_data').select('id').eq('id', 1).single();
+        // PGRST116 = ligne absente (base vide) — c'est un état connu, pas une erreur réseau
+        if(!error) setSyncStatus(didLoadRemote.current ? 'ok' : 'ok');
+        else if(error.code === 'PGRST116') setSyncStatus('empty');
+        if(!error || error.code === 'PGRST116') addSyncLog('ERROR_RECOVERED', 'auto-retry réussi');
+      } catch(e) {}
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [syncStatus]);
 
   const handleManualInit = React.useCallback(async (sourceLabel, dataToWrite) => {
     // Garde : jamais de données de démo
@@ -4309,6 +4348,7 @@ function App() {
             if(vrow && typeof vrow.version === 'number' && typeof setLocalVersion === 'function') setLocalVersion(vrow.version);
           }).catch(() => {});
           addSyncLog('LOAD_OK', `size=${lastRemoteDataSize}B`);
+          didLoadRemote.current = true; // V24 : marque le chargement distant comme réussi
           // V23 : snapshot de démarrage (une fois par session, silencieux si table absente)
           if(typeof shouldCreateStartupSnapshot === 'function' && shouldCreateStartupSnapshot()) {
             if(typeof createSnapshot === 'function') createSnapshot('startup').catch(() => {});
@@ -4339,20 +4379,18 @@ function App() {
       .on('postgres_changes', {event:'UPDATE', schema:'public', table:'app_data'}, (payload) => {
         if(!payload.new?.data) return;
         const incoming = securizeData(payload.new.data);
-        // Blocage démo
+        // Blocage démo uniquement — on fait confiance aux données venant de Supabase (V24)
         if(isDemoData(incoming)) {
           console.error('[SAFE-SYNC] Realtime bloqué : données de démo détectées');
           addSyncLog('REALTIME_BLOCKED', 'demo data detected');
           return;
         }
-        // R5 : SIZE_REGRESSION sur les mises à jour entrantes realtime
+        // V24 : mise à jour de la taille et de la version connues depuis Supabase
         const incomingSize = JSON.stringify(incoming).length;
-        if(lastRemoteDataSize > 5000 && incomingSize < lastRemoteDataSize * 0.4) {
-          console.error(`[SAFE-SYNC] Realtime bloqué : régression taille (${incomingSize}B << ${lastRemoteDataSize}B connus)`);
-          addSyncLog('REALTIME_SIZE_REGRESSION', `incoming=${incomingSize}B vs known=${lastRemoteDataSize}B`);
-          return;
-        }
         persistRemoteSize(incomingSize); // R4 : mise à jour de la taille distante connue
+        if(payload.new?.version && typeof setLocalVersion === 'function') {
+          setLocalVersion(payload.new.version); // V24 : sync _localVersion → évite fausse détection conflit
+        }
         isRemoteUpdate.current = true;
         setData(incoming);
         try { localStorage.setItem(LS_KEY, JSON.stringify(incoming)); } catch(e) {}
@@ -4366,13 +4404,16 @@ function App() {
   }, []);
 
   // Sauvegarde Supabase à chaque changement (sauf mises à jour reçues du realtime)
+  // V24 : guard affiné — bloque uniquement les états où écrire serait dangereux ou inutile
   React.useEffect(() => {
     if(!synced) return;
-    // R1 : aucune écriture Supabase si la connexion distante n'est pas confirmée comme saine
-    // — 'empty' : ligne distante absente, l'utilisateur doit initier manuellement
-    // — 'error' : connexion échouée, pas d'écriture silencieuse
-    // — 'loading' : chargement en cours, attente
-    if(syncStatus !== 'ok') return;
+    // 'loading' : montage en cours, attente
+    // 'empty' : ligne distante absente, initialisation manuelle requise
+    // 'conflict' : conflit en cours de résolution automatique — ne pas écrire pendant ce temps
+    if(syncStatus === 'loading' || syncStatus === 'empty' || syncStatus === 'conflict') return;
+    // 'error' : autorisé UNIQUEMENT si Supabase a déjà été lu avec succès (donc on a bien les données distantes)
+    // — si jamais lu (didLoadRemote=false), bloquer pour éviter d'écraser la base avec des données locales potentiellement obsolètes
+    if(syncStatus === 'error' && !didLoadRemote.current) return;
     if(isRemoteUpdate.current) { isRemoteUpdate.current = false; return; }
     saveData(data);
   }, [data, synced, syncStatus]);
@@ -4510,15 +4551,17 @@ function App() {
             </div>
             <button
               onClick={async () => {
-                const { data: rows, error } = await sb.from('app_data').select('data').eq('id', 1).single();
+                const { data: rows, error } = await sb.from('app_data').select('data, version').eq('id', 1).single();
                 if(!error && rows?.data) {
                   const remote = securizeData(rows.data);
-                  setLocalVersion(rows.version || 1);
+                  if(rows.version && typeof setLocalVersion === 'function') setLocalVersion(rows.version);
+                  persistRemoteSize(JSON.stringify(remote).length);
                   isRemoteUpdate.current = true;
                   setData(remote);
                   try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
+                  addSyncLog('CONFLICT_MANUAL_RESOLVED', `v=${rows.version||'?'}`);
                   setSyncStatus('ok');
-                  addToast('Données distantes rechargées ☁️', 'success');
+                  addToast('Données rechargées depuis Supabase ☁️', 'success');
                 } else {
                   addToast('Rechargement échoué : ' + (error?.message||'inconnu'), 'error');
                 }

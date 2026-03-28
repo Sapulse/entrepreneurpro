@@ -3,7 +3,7 @@
 // Aucune dépendance externe. Chargé avant les autres modules.
 // ============================================================
 
-const APP_VERSION = "V23 – Snapshots cloud & versioning";
+const APP_VERSION = "V24 – Sync multi-appareils fiabilisé";
 const SCHEMA_VERSION = 3;
 const LS_KEY = "entrepreneurpro_v14_data";
 const UI_PREFS_KEY = "entrepreneurpro_ui_prefs";
