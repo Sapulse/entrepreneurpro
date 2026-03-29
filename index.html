@@ -3327,7 +3327,7 @@ function AnalyticsModule({data}) {
   // 1. CA mensuel par année (global – pas de filtre de période)
   const caMonthlyByYear = React.useMemo(() => {
     const map = {};
-    entries.filter(e=>e.type==='contract').forEach(e => {
+    entries.filter(e=>e.type==='contract' && e.date).forEach(e => {
       const y = +e.date.substring(0,4); const m = +e.date.substring(5,7)-1;
       if(!map[y]) map[y] = Array(12).fill(0);
       map[y][m] += e.montant;
@@ -3338,7 +3338,7 @@ function AnalyticsModule({data}) {
   // 2. CA annuel comparatif (global)
   const caAnnuel = React.useMemo(() => {
     const map = {};
-    entries.filter(e=>e.type==='contract').forEach(e => { const y=+e.date.substring(0,4); map[y]=(map[y]||0)+e.montant; });
+    entries.filter(e=>e.type==='contract' && e.date).forEach(e => { const y=+e.date.substring(0,4); map[y]=(map[y]||0)+e.montant; });
     return map;
   }, [entries]);
 
