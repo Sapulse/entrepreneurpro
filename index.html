@@ -1953,6 +1953,8 @@ function CRMModule({data, setData, onNavigate}) {
   const addToast = useToast();
   const [view, setView] = React.useState('liste');
   const [search, setSearch] = React.useState('');
+  const [stageFilter, setStageFilter] = React.useState('');
+  const [dragOverStage, setDragOverStage] = React.useState(null);
   const [selectedClient, setSelectedClient] = React.useState(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [newClientModal, setNewClientModal] = React.useState(false);
@@ -1960,10 +1962,11 @@ function CRMModule({data, setData, onNavigate}) {
 
   const filtered = React.useMemo(() => {
     let list = [...(data.clients||[])].sort((a,b)=>new Date(b.dateEntree||0)-new Date(a.dateEntree||0));
+    if(stageFilter) list = list.filter(c => c.etape === stageFilter);
     if(!search) return list;
     const q = normalize(search);
     return list.filter(c => normalize(c.entreprise).includes(q)||normalize(c.nom).includes(q)||normalize(c.prenom||'').includes(q)||normalize(c.email||'').includes(q));
-  }, [data.clients, search]);
+  }, [data.clients, search, stageFilter]);
 
   const getCA = (cl) => {
     return data.contracts.filter(c=>(c.clientId===cl.id||normalize(c.client)===normalize(cl.entreprise))&&c.statut!=='Annulé').reduce((s,c)=>s+(Number(c.montant)||0),0);
@@ -2005,6 +2008,18 @@ function CRMModule({data, setData, onNavigate}) {
       </div>
 
       {view==='liste' && (<>
+        <div className="flex flex-wrap gap-1.5">
+          {['Tous', ...CRM_STAGES].map(s => {
+            const active = stageFilter === (s==='Tous' ? '' : s);
+            return (
+              <button key={s} onClick={()=>setStageFilter(s==='Tous'?'':s)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${active?'bg-indigo-600 text-white shadow-sm':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                {s}
+                {s!=='Tous' && <span className="ml-1 opacity-70">{(data.clients||[]).filter(c=>c.etape===s).length}</span>}
+              </button>
+            );
+          })}
+        </div>
         <input className={`${inputCls} max-w-sm`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher entreprise, nom..."/>
         {filtered.length===0 ? <EmptyState message="Aucun client trouvé" icon="👥"/> : (<>
           {/* Desktop */}
@@ -2052,40 +2067,62 @@ function CRMModule({data, setData, onNavigate}) {
         </>)}
       </>)}
 
-      {view==='pipeline' && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {CRM_STAGES.map(stage => {
-            const stageClients = (data.clients||[]).filter(c=>c.etape===stage);
-            return (
-              <div key={stage} className="bg-gray-50 rounded-2xl p-3 min-h-[120px]"
-                onDragOver={e=>{e.preventDefault();}}
-                onDrop={e=>{e.preventDefault();const cid=e.dataTransfer.getData('clientId');if(cid){setData(d=>({...d,clients:d.clients.map(c=>c.id===cid?{...c,etape:stage}:c)}));addToast(`Déplacé vers ${stage}`,'success');}}}>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-gray-600">{stage}</span>
-                  <span className="text-xs bg-white px-1.5 py-0.5 rounded-full text-gray-500 shadow-sm">{stageClients.length}</span>
+      {view==='pipeline' && (() => {
+        const STAGE_COLORS = {
+          'Contact':     {bg:'bg-gray-50',    border:'border border-gray-200',   hdr:'text-gray-600',   ring:'ring-gray-300'},
+          'RDV 1':       {bg:'bg-blue-50',    border:'border border-blue-100',   hdr:'text-blue-700',   ring:'ring-blue-300'},
+          'Devis':       {bg:'bg-amber-50',   border:'border border-amber-100',  hdr:'text-amber-700',  ring:'ring-amber-300'},
+          'Négociation': {bg:'bg-purple-50',  border:'border border-purple-100', hdr:'text-purple-700', ring:'ring-purple-300'},
+        };
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {pipelineStages.map(stage => {
+              const sc = STAGE_COLORS[stage] || STAGE_COLORS['Contact'];
+              const stageClients = (data.clients||[]).filter(c=>c.etape===stage);
+              const stageTotal = stageClients.reduce((s,c)=>s+(Number(c.potentiel)||0),0);
+              const isOver = dragOverStage === stage;
+              return (
+                <div key={stage}
+                  className={`${sc.bg} ${sc.border} rounded-2xl p-3 min-h-[120px] transition-all ${isOver?`ring-2 ${sc.ring}`:''}`}
+                  onDragOver={e=>{e.preventDefault();setDragOverStage(stage);}}
+                  onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOverStage(null);}}
+                  onDrop={e=>{e.preventDefault();setDragOverStage(null);const cid=e.dataTransfer.getData('clientId');if(cid){setData(d=>({...d,clients:d.clients.map(c=>c.id===cid?{...c,etape:stage}:c)}));addToast(`Déplacé vers ${stage}`,'success');}}}>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className={`text-xs font-bold uppercase tracking-wide ${sc.hdr}`}>{stage}</span>
+                    <span className="text-xs bg-white px-1.5 py-0.5 rounded-full text-gray-500 shadow-sm">{stageClients.length}</span>
+                  </div>
+                  {stageTotal > 0 && <div className={`text-xs font-semibold mb-3 ${sc.hdr} opacity-60`}>{fmt(stageTotal)}</div>}
+                  {stageTotal === 0 && <div className="mb-3"/>}
+                  <div className="space-y-2">
+                    {stageClients.map(cl => {
+                      const lastActionDate = (cl.actions||[]).reduce((m,a)=>a.date>m?a.date:m,'');
+                      const daysSince = lastActionDate ? Math.floor((Date.now()-new Date(lastActionDate))/86400000) : null;
+                      const staleCls = daysSince===null?'text-gray-300':daysSince>14?'text-red-500 font-semibold':daysSince>7?'text-amber-500':'text-green-600';
+                      const staleLabel = daysSince===null?'Aucune action':daysSince===0?"Aujourd'hui":`il y a ${daysSince}j`;
+                      return (
+                        <div key={cl.id}
+                          draggable
+                          onDragStart={e=>{e.dataTransfer.setData('clientId',cl.id);}}
+                          className="bg-white rounded-xl p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow border border-gray-100">
+                          <div className="text-sm font-semibold text-gray-800 truncate">{cl.entreprise}</div>
+                          <div className="text-xs text-gray-500 truncate mt-0.5">{cl.prenom?`${cl.prenom} ${cl.nom}`:cl.nom}</div>
+                          {(cl.potentiel||0)>0 && <div className="text-xs font-semibold text-blue-700 mt-1">{fmt(cl.potentiel)}</div>}
+                          <div className={`text-xs mt-1 ${staleCls}`}>{staleLabel}</div>
+                          <div className="flex gap-1 mt-2">
+                            <button onClick={()=>openClient(cl)} className="text-xs text-blue-500 hover:text-blue-700">Voir</button>
+                            <button onClick={()=>{onNavigate('contracts',{clientId:cl.id,client:cl.entreprise,montant:cl.potentiel});}} className="text-xs text-green-600 hover:text-green-800 ml-1">→ Contrat</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {stageClients.length===0 && <div className="text-center text-xs text-gray-300 py-4">Vide</div>}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {stageClients.map(cl => (
-                    <div key={cl.id}
-                      draggable
-                      onDragStart={e=>{e.dataTransfer.setData('clientId',cl.id);}}
-                      className="bg-white rounded-xl p-3 shadow-sm cursor-grab hover:shadow-md transition-shadow border border-gray-100">
-                      <div className="text-sm font-semibold text-gray-800 truncate">{cl.entreprise}</div>
-                      <div className="text-xs text-gray-500 truncate mt-0.5">{cl.prenom ? `${cl.prenom} ${cl.nom}` : cl.nom}</div>
-                      <div className="text-xs font-semibold text-blue-700 mt-1">{fmt(cl.potentiel)}</div>
-                      <div className="flex gap-1 mt-2">
-                        <button onClick={()=>openClient(cl)} className="text-xs text-blue-500 hover:text-blue-700">Voir</button>
-                        {cl.etape !== 'Client' && <button onClick={()=>{onNavigate('contracts',{clientId:cl.id,client:cl.entreprise,montant:cl.potentiel});}} className="text-xs text-green-600 hover:text-green-800 ml-1">→ Contrat</button>}
-                      </div>
-                    </div>
-                  ))}
-                  {stageClients.length===0 && <div className="text-center text-xs text-gray-300 py-4">Vide</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        );
+      })()}
 
       <ClientModal
         open={modalOpen}
