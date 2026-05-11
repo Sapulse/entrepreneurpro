@@ -104,8 +104,11 @@ function saveData(d) {
     await Promise.allSettled(entityFns);
 
     // Ping de sync : incrément de version dans app_data — plus de blob data
-    // Si la colonne version n'existe pas encore (PGRST204), on réessaie sans version
+    // _localVersion mis à jour AVANT le ping pour que la détection self-update fonctionne
+    // (realtime peut arriver avant que le .then() ait mis à jour la variable)
     const newVersion = (_localVersion > 0 ? _localVersion : 0) + 1;
+    _localVersion = newVersion; // anticipé — évite le rechargement parasite depuis realtime
+
     // data:{} satisfait la contrainte NOT NULL tout en restant un payload minimal
     let { data: result, error } = await sb.from('app_data')
       .upsert({ id: 1, version: newVersion, data: {} })
@@ -121,12 +124,13 @@ function saveData(d) {
     if(error) {
       console.error('[SAFE-SYNC] Supabase ping error:', error.code, error.message);
       addSyncLog('WRITE_ERROR', `${error.code}: ${error.message}`);
+      _localVersion = newVersion - 1; // rollback si ping échoué
       if(_onSyncStatusChange) _onSyncStatusChange('error');
     } else if(!result || result.length === 0) {
       addSyncLog('WRITE_SILENT_BLOCK', 'upsert returned [] — vérifier RLS sur app_data');
+      _localVersion = newVersion - 1;
       if(_onSyncStatusChange) _onSyncStatusChange('error');
     } else {
-      if(newVersion > 1 || _localVersion > 0) _localVersion = newVersion;
       addSyncLog('WRITE_OK', `v=${_localVersion} entities synced`);
       if(_onSyncStatusChange) _onSyncStatusChange('ok');
     }
