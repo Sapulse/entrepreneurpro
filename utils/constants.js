@@ -3,7 +3,7 @@
 // Aucune dépendance externe. Chargé avant les autres modules.
 // ============================================================
 
-const APP_VERSION = "V30 – Pipeline CRM : couleurs, totaux, filtre étape, indicateur dernière action";
+const APP_VERSION = "V31 – CRM actions : log appels/RDV/notes depuis la fiche client";
 const SCHEMA_VERSION = 3;
 const LS_KEY = "entrepreneurpro_v14_data";
 const UI_PREFS_KEY = "entrepreneurpro_ui_prefs";
