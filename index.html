@@ -2161,23 +2161,33 @@ function CRMModule({data, setData, onNavigate}) {
   const [view, setView] = React.useState('liste');
   const [search, setSearch] = React.useState('');
   const [stageFilter, setStageFilter] = React.useState('');
+  const [sortBy, setSortBy] = React.useState('date_desc');
   const [dragOverStage, setDragOverStage] = React.useState(null);
   const [selectedClient, setSelectedClient] = React.useState(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [newClientModal, setNewClientModal] = React.useState(false);
   const [newForm, setNewForm] = React.useState({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:''});
 
-  const filtered = React.useMemo(() => {
-    let list = [...(data.clients||[])].sort((a,b)=>new Date(b.dateEntree||0)-new Date(a.dateEntree||0));
-    if(stageFilter) list = list.filter(c => c.etape === stageFilter);
-    if(!search) return list;
-    const q = normalize(search);
-    return list.filter(c => normalize(c.entreprise).includes(q)||normalize(c.nom).includes(q)||normalize(c.prenom||'').includes(q)||normalize(c.email||'').includes(q));
-  }, [data.clients, search, stageFilter]);
-
   const getCA = (cl) => {
     return data.contracts.filter(c=>(c.clientId===cl.id||normalize(c.client)===normalize(cl.entreprise))&&c.statut!=='Annulé').reduce((s,c)=>s+(Number(c.montant)||0),0);
   };
+
+  const filtered = React.useMemo(() => {
+    let list = [...(data.clients||[])];
+    if(stageFilter) list = list.filter(c => c.etape === stageFilter);
+    if(search) {
+      const q = normalize(search);
+      list = list.filter(c => normalize(c.entreprise).includes(q)||normalize(c.nom).includes(q)||normalize(c.prenom||'').includes(q)||normalize(c.email||'').includes(q));
+    }
+    const sorters = {
+      date_desc: (a,b) => new Date(b.dateEntree||0) - new Date(a.dateEntree||0),
+      date_asc:  (a,b) => new Date(a.dateEntree||0) - new Date(b.dateEntree||0),
+      alpha:     (a,b) => (a.entreprise||'').localeCompare(b.entreprise||'', 'fr', {sensitivity:'base'}),
+      potentiel: (a,b) => (Number(b.potentiel)||0) - (Number(a.potentiel)||0),
+      ca:        (a,b) => getCA(b) - getCA(a),
+    };
+    return list.sort(sorters[sortBy] || sorters.date_desc);
+  }, [data.clients, data.contracts, search, stageFilter, sortBy]);
 
   const openClient = (cl) => { setSelectedClient(cl); setModalOpen(true); };
 
@@ -2227,7 +2237,19 @@ function CRMModule({data, setData, onNavigate}) {
             );
           })}
         </div>
-        <input className={`${inputCls} max-w-sm`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher entreprise, nom..."/>
+        <div className="flex flex-wrap items-center gap-2">
+          <input className={`${inputCls} max-w-sm flex-1 min-w-[200px]`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher entreprise, nom..."/>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-gray-500 whitespace-nowrap">Trier par :</span>
+            <select className={`${selectCls} w-auto`} value={sortBy} onChange={e=>setSortBy(e.target.value)}>
+              <option value="date_desc">Date récente</option>
+              <option value="date_asc">Date ancienne</option>
+              <option value="alpha">Entreprise A-Z</option>
+              <option value="potentiel">Potentiel ↓</option>
+              <option value="ca">CA généré ↓</option>
+            </select>
+          </div>
+        </div>
         {filtered.length===0 ? <EmptyState message="Aucun client trouvé" icon="👥"/> : (<>
           {/* Desktop */}
           <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
