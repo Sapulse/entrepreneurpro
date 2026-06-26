@@ -1308,7 +1308,7 @@ function InvoicesModule({data, setData}) {
 // CONTRACTS MODULE
 // ============================================================
 function QuickClientCreate({onCreated, clients}) {
-  const [form, setForm] = React.useState({entreprise:'', nom:''});
+  const [form, setForm] = React.useState({entreprise:'', nom:'', source:''});
   const [duplicate, setDuplicate] = React.useState(null);
   const addToast = useToast();
 
@@ -1318,9 +1318,9 @@ function QuickClientCreate({onCreated, clients}) {
       const dup = clients.find(c => normalize(c.entreprise)===normalize(form.entreprise));
       if(dup) { setDuplicate(dup); return; }
     }
-    const nc = {id:genId(), entreprise:form.entreprise.trim(), nom:form.nom.trim(), email:'', telephone:'', source:'Autre', etape:'Contact', potentiel:0, notes:'', dateEntree:todayStr()};
+    const nc = {id:genId(), entreprise:form.entreprise.trim(), nom:form.nom.trim(), email:'', telephone:'', source:form.source||'', etape:'Contact', potentiel:0, notes:'', dateEntree:todayStr()};
     onCreated(nc);
-    setForm({entreprise:'', nom:''});
+    setForm({entreprise:'', nom:'', source:''});
     setDuplicate(null);
   };
 
@@ -1335,6 +1335,13 @@ function QuickClientCreate({onCreated, clients}) {
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Nom contact *</label>
           <input className={inputCls} value={form.nom} onChange={e=>setForm(f=>({...f,nom:e.target.value}))} placeholder="Prénom Nom"/>
+        </div>
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Source</label>
+          <select className={selectCls} value={form.source} onChange={e=>setForm(f=>({...f,source:e.target.value}))}>
+            <option value="">— Choisir —</option>
+            {SOURCES.map(s=><option key={s}>{s}</option>)}
+          </select>
         </div>
       </div>
       {duplicate && (
@@ -2006,7 +2013,7 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
                 <div><span className="text-gray-500">Contact:</span> <span className="font-medium">{form.prenom ? `${form.prenom} ${form.nom}` : form.nom}</span></div>
                 <div><span className="text-gray-500">Email:</span> {form.email ? <a href={`mailto:${form.email}`} className="text-blue-600 hover:underline font-medium">{form.email}</a> : <span className="text-gray-400">—</span>}</div>
                 <div><span className="text-gray-500">Tél:</span> <span className="font-medium">{form.telephone||'—'}</span></div>
-                <div><span className="text-gray-500">Source:</span> <StatusBadge status={form.source}/></div>
+                <div><span className="text-gray-500">Source:</span> {form.source ? <StatusBadge status={form.source}/> : <span className="text-gray-400">—</span>}</div>
                 <div className="flex items-center gap-2"><span className="text-gray-500">Étape:</span>
                   <select className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white" value={form.etape||'Contact'} onChange={e=>{const updated={...form,etape:e.target.value};setForm(updated);onSave({...updated,potentiel:Number(updated.potentiel)||0});}}>
                     {CRM_STAGES.map(s=><option key={s}>{s}</option>)}
@@ -2039,7 +2046,8 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">Téléphone</label><input className={inputCls} value={form.telephone||''} onChange={e=>setForm(f=>({...f,telephone:e.target.value}))}/></div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Source</label>
-                  <select className={selectCls} value={form.source||'Autre'} onChange={e=>setForm(f=>({...f,source:e.target.value}))}>
+                  <select className={selectCls} value={form.source||''} onChange={e=>setForm(f=>({...f,source:e.target.value,recommandePar:e.target.value!=='Recommandation'?'':f.recommandePar}))}>
+                    <option value="">— Choisir —</option>
                     {SOURCES.map(s=><option key={s}>{s}</option>)}
                   </select>
                 </div>
@@ -2157,7 +2165,7 @@ function CRMModule({data, setData, onNavigate}) {
   const [selectedClient, setSelectedClient] = React.useState(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [newClientModal, setNewClientModal] = React.useState(false);
-  const [newForm, setNewForm] = React.useState({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'Autre',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:''});
+  const [newForm, setNewForm] = React.useState({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:''});
 
   const filtered = React.useMemo(() => {
     let list = [...(data.clients||[])].sort((a,b)=>new Date(b.dateEntree||0)-new Date(a.dateEntree||0));
@@ -2187,7 +2195,7 @@ function CRMModule({data, setData, onNavigate}) {
     const nc = {...newForm, id:genId(), potentiel:Number(newForm.potentiel)||0, dateEntree:newForm.dateEntree||todayStr()};
     setData(d => ({...d, clients:[...(d.clients||[]), nc]}));
     setNewClientModal(false);
-    setNewForm({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'Autre',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:''});
+    setNewForm({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:''});
     addToast('Client créé','success');
   };
 
@@ -2235,7 +2243,7 @@ function CRMModule({data, setData, onNavigate}) {
                     <td className="px-4 py-3 font-medium text-gray-800 cursor-pointer" onClick={()=>openClient(cl)}>{cl.entreprise}</td>
                     <td className="px-4 py-3 text-gray-600 cursor-pointer" onClick={()=>openClient(cl)}>{cl.prenom ? `${cl.prenom} ${cl.nom}` : cl.nom}</td>
                     <td className="px-4 py-3">{cl.email ? <a href={`mailto:${cl.email}`} onClick={e=>e.stopPropagation()} className="text-blue-600 hover:text-blue-800 text-xs underline truncate max-w-[140px] block" title={cl.email}>{cl.email}</a> : <span className="text-gray-300 text-xs">—</span>}</td>
-                    <td className="px-4 py-3 cursor-pointer" onClick={()=>openClient(cl)}><StatusBadge status={cl.source}/></td>
+                    <td className="px-4 py-3 cursor-pointer" onClick={()=>openClient(cl)}>{cl.source ? <StatusBadge status={cl.source}/> : <span className="text-gray-300 text-xs">—</span>}</td>
                     <td className="px-4 py-3 cursor-pointer" onClick={()=>openClient(cl)}><StatusBadge status={cl.etape}/></td>
                     <td className="px-4 py-3 font-semibold cursor-pointer" onClick={()=>openClient(cl)}>{fmt(cl.potentiel)}</td>
                     <td className="px-4 py-3 text-green-700 font-semibold cursor-pointer" onClick={()=>openClient(cl)}>{fmt(getCA(cl))}</td>
@@ -2258,7 +2266,7 @@ function CRMModule({data, setData, onNavigate}) {
                   <div className="text-sm font-bold text-blue-700">{fmt(cl.potentiel)}</div>
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
-                  <StatusBadge status={cl.source}/><StatusBadge status={cl.etape}/>
+                  {cl.source && <StatusBadge status={cl.source}/>}<StatusBadge status={cl.etape}/>
                 </div>
               </div>
             ))}
@@ -2352,6 +2360,7 @@ function CRMModule({data, setData, onNavigate}) {
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Source</label>
               <select className={selectCls} value={newForm.source} onChange={e=>setNewForm(f=>({...f,source:e.target.value,recommandePar:e.target.value!=='Recommandation'?'':f.recommandePar}))}>
+                <option value="">— Choisir —</option>
                 {SOURCES.map(s=><option key={s}>{s}</option>)}
               </select>
             </div>
