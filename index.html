@@ -4209,18 +4209,24 @@ function PilotageModule({data}) {
 // ============================================================
 // MAIN APP
 // ============================================================
+// Navigation à 2 niveaux : items seuls ({id}) + groupes dépliables ({group, children}).
+// L'ordre/structure est FIXE (plus de personnalisation). Le rendu des modules reste piloté par id.
 const NAV_ITEMS = [
   {id:'dashboard', label:'Dashboard', icon:'📊'},
-  {id:'pilotage', label:'Pilotage', icon:'🎯'},
-  {id:'analytics', label:'Analytics', icon:'📈'},
-  {id:'tresorerie', label:'Trésorerie', icon:'💰'},
-  {id:'quotes', label:'Devis', icon:'📋'},
-  {id:'invoices', label:'Facturation', icon:'🧾'},
-  {id:'ledger', label:'Grand Livre', icon:'📒'},
-  {id:'contracts', label:'Contrats', icon:'📄'},
+  {id:'pilotage', label:'Pilotage', icon:'🎯'}, // placement temporaire — fusion future avec Dashboard
+  {group:'clients_ventes', label:'Clients & Ventes', icon:'🤝', children:[
+    {id:'crm', label:'CRM', icon:'👥'},
+    {id:'quotes', label:'Devis', icon:'📋'},
+    {id:'contracts', label:'Contrats', icon:'📄'},
+  ]},
+  {group:'finances', label:'Finances', icon:'💶', children:[
+    {id:'tresorerie', label:'Trésorerie', icon:'💰'},
+    {id:'invoices', label:'Facturation', icon:'🧾'},
+    {id:'ledger', label:'Grand Livre', icon:'📒'},
+    {id:'bank', label:'Banque & Frais', icon:'🏦'},
+    {id:'analytics', label:'Analytics', icon:'📈'},
+  ]},
   {id:'tasks', label:'Tâches', icon:'✅'},
-  {id:'bank', label:'Banque & Frais', icon:'🏦'},
-  {id:'crm', label:'CRM', icon:'👥'},
   {id:'resources', label:'Drive & Liens', icon:'🔗'},
 ];
 
@@ -4354,46 +4360,30 @@ function SyncStatusButton({syncStatus}) {
 
 function Sidebar({active, onChange, onExport, onImport, onSnapshots, onTestSync, testSyncBusy, version, sidebarOpen, setSidebarOpen, syncStatus, onSearch, onAlerts, alertCount}) {
   const fileRef = React.useRef();
-  const dragNavItem = React.useRef(null);
 
-  const [navOrder, setNavOrder] = React.useState(() => {
-    const p = loadUIPrefs();
-    return p.navOrder || NAV_ITEMS.map(i=>i.id);
-  });
-  const [hiddenNav, setHiddenNav] = React.useState(() => {
-    const p = loadUIPrefs();
-    return new Set(p.hiddenNav||[]);
-  });
-  const [customizing, setCustomizing] = React.useState(false);
-  const [dragOver, setDragOver] = React.useState(null);
   const [settingsOpen, setSettingsOpen] = React.useState(false); // Menu Réglages replié par défaut
+  // État d'ouverture par groupe dépliable. Initialisé ouvert pour le groupe contenant le module actif.
+  const [openGroups, setOpenGroups] = React.useState(() => {
+    const init = {};
+    NAV_ITEMS.forEach(it => { if(it.group && it.children.some(c=>c.id===active)) init[it.group] = true; });
+    return init;
+  });
 
-  const saveNavPrefs = (order, hidden) => {
-    saveUIPrefs({...loadUIPrefs(), navOrder:order, hiddenNav:[...hidden]});
-  };
+  // Le groupe contenant le module actif s'ouvre automatiquement (deep-links, recherche, alertes...).
+  React.useEffect(() => {
+    const grp = NAV_ITEMS.find(it => it.group && it.children.some(c=>c.id===active));
+    if(grp) setOpenGroups(o => o[grp.group] ? o : {...o, [grp.group]:true});
+  }, [active]);
 
-  const orderedItems = React.useMemo(() => {
-    const byId = Object.fromEntries(NAV_ITEMS.map(i=>[i.id,i]));
-    const ordered = navOrder.map(id=>byId[id]).filter(Boolean);
-    NAV_ITEMS.forEach(i => { if(!navOrder.includes(i.id)) ordered.push(i); });
-    return ordered;
-  }, [navOrder]);
-
-  const handleDragStart = (id) => { dragNavItem.current = id; };
-  const handleDrop = (id) => {
-    if(!dragNavItem.current || dragNavItem.current === id) return;
-    const o = [...navOrder];
-    const from = o.indexOf(dragNavItem.current); const to = o.indexOf(id);
-    if(from<0||to<0) { dragNavItem.current=null; setDragOver(null); return; }
-    o.splice(from,1); o.splice(to,0,dragNavItem.current);
-    setNavOrder(o); saveNavPrefs(o, hiddenNav);
-    dragNavItem.current=null; setDragOver(null);
-  };
-  const toggleNav = (id) => {
-    const nh = new Set(hiddenNav);
-    if(nh.has(id)) nh.delete(id); else nh.add(id);
-    setHiddenNav(nh); saveNavPrefs(navOrder, nh);
-  };
+  // Rendu d'un item feuille (item seul OU enfant de groupe) — navigation par id.
+  const renderLeaf = (item) => (
+    <button key={item.id}
+      onClick={() => { onChange(item.id); setSidebarOpen(false); }}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${active===item.id?'bg-blue-50 text-blue-700':'text-gray-600 hover:bg-gray-50 hover:text-gray-800'}`}>
+      <span className="text-base">{item.icon}</span>
+      {item.label}
+    </button>
+  );
 
   const handleImportFile = (e) => {
     const file = e.target.files[0];
@@ -4417,40 +4407,31 @@ function Sidebar({active, onChange, onExport, onImport, onSnapshots, onTestSync,
         </div>
       </div>
       <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-0.5">
-        {orderedItems.map(item => {
-          const isHidden = hiddenNav.has(item.id);
-          if(!customizing && isHidden) return null;
-          return (
-            <div key={item.id}
-              draggable={customizing}
-              onDragStart={customizing ? () => handleDragStart(item.id) : undefined}
-              onDragOver={customizing ? (e) => { e.preventDefault(); setDragOver(item.id); } : undefined}
-              onDragLeave={customizing ? () => setDragOver(v=>v===item.id?null:v) : undefined}
-              onDrop={customizing ? (e) => { e.preventDefault(); handleDrop(item.id); } : undefined}
-              className={`flex items-center gap-1 rounded-xl transition-all ${dragOver===item.id&&customizing?'ring-2 ring-blue-300 bg-blue-50':''} ${isHidden&&customizing?'opacity-40':''}`}
-            >
-              {customizing && (
-                <span className="text-gray-300 pl-1 text-sm select-none cursor-grab shrink-0">⠿</span>
-              )}
-              <button
-                onClick={() => { if(!customizing) { onChange(item.id); setSidebarOpen(false); } }}
-                className={`flex-1 flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${active===item.id&&!customizing?'bg-blue-50 text-blue-700':isHidden?'text-gray-300':'text-gray-600 hover:bg-gray-50 hover:text-gray-800'} ${customizing?'cursor-default':''}`}>
-                <span className="text-base">{item.icon}</span>
-                {item.label}
-              </button>
-              {customizing && (
-                <button onClick={() => toggleNav(item.id)} className={`shrink-0 text-xs px-1.5 py-1 rounded mr-1 transition-colors ${isHidden?'text-gray-400 hover:text-blue-500':'text-gray-300 hover:text-red-400'}`} title={isHidden?'Afficher':'Masquer'}>
-                  {isHidden ? '👁' : '✕'}
+        {NAV_ITEMS.map(item => {
+          if(item.group) {
+            const isOpen = !!openGroups[item.group];
+            const hasActiveChild = item.children.some(c => c.id === active);
+            return (
+              <div key={item.group}>
+                <button onClick={() => setOpenGroups(o => ({...o, [item.group]: !o[item.group]}))}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${hasActiveChild?'text-blue-700':'text-gray-600 hover:bg-gray-50 hover:text-gray-800'}`}>
+                  <span className="text-base">{item.icon}</span>
+                  {item.label}
+                  {hasActiveChild && !isOpen && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"/>}
+                  <span className="ml-auto text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>
                 </button>
-              )}
-            </div>
-          );
+                {isOpen && (
+                  <div className="ml-2 pl-2 border-l border-gray-100 space-y-0.5 mt-0.5">
+                    {item.children.map(child => renderLeaf(child))}
+                  </div>
+                )}
+              </div>
+            );
+          }
+          return renderLeaf(item);
         })}
       </nav>
       <div className="px-3 py-4 border-t border-gray-100 space-y-1">
-        <button onClick={() => setCustomizing(v=>!v)} className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-colors ${customizing?'bg-blue-50 text-blue-600 font-semibold':'text-gray-500 hover:bg-gray-50'}`}>
-          <span>🧩</span> {customizing ? 'Terminer personnalisation' : 'Personnaliser le menu'}
-        </button>
         {/* Menu Réglages repliable — regroupe les outils techniques (export/import/snapshots/test sync) */}
         <button onClick={() => setSettingsOpen(v=>!v)} className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-colors ${settingsOpen?'bg-gray-100 text-gray-700 font-semibold':'text-gray-500 hover:bg-gray-50'}`}>
           <span>⚙️</span> Réglages
