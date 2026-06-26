@@ -650,8 +650,8 @@ function Dashboard({data, onNavigate, setData}) {
       case 'kpis': return (
         <DraggableWidget key={id} {...wProps(id)}>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <KPICard label="CA Signé (période)" value={fmt(stats.caSigne)} icon="📄" color="blue"/>
-            <KPICard label="CA Encaissé (période)" value={fmt(stats.caEncaisse)} icon="💰" color="green"/>
+            <KPICard label="CA Signé" value={fmt(stats.caSigne)} icon="📄" color="blue"/>
+            <KPICard label="CA Encaissé" value={fmt(stats.caEncaisse)} icon="💰" color="green"/>
             <KPICard label="Reste à encaisser" value={fmt(stats.resteTotal)} icon="⏳" color="amber"/>
             <KPICard label="Potentiel Prospects" value={fmt(stats.potentiel)} icon="🎯" color="purple"/>
           </div>
