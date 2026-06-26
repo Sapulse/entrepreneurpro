@@ -643,6 +643,29 @@ function Dashboard({data, onNavigate, setData}) {
       mickaPay, cesarPay, mickaApports, cesarApports, mickaAdv, cesarAdv};
   }, [data, periodeId, dateDebut, dateFin]);
 
+  // M1 : flux mensuel Entrées/Sorties sur les 12 derniers mois glissants.
+  // Indépendant du filtre de période (un graphe d'évolution n'a de sens que sur la durée).
+  // Lecture seule : réutilise buildLedgerEntries, ne modifie aucun agrégat existant.
+  const fluxMensuel = React.useMemo(() => {
+    const allEntries = buildLedgerEntries(data);
+    const now = new Date();
+    const monthKeys = Array.from({length:12}, (_,i) => {
+      const d = new Date(now.getFullYear(), now.getMonth()-11+i, 1);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    });
+    const entrees = byMonth(allEntries.filter(e=>e.montant>0), e=>e.date, e=>e.montant, monthKeys);
+    const sorties = byMonth(allEntries.filter(e=>e.montant<0), e=>e.date, e=>Math.abs(e.montant), monthKeys);
+    return {labels: entrees.labels, entrees: entrees.values, sorties: sorties.values};
+  }, [data]);
+  const fluxMensuelChartData = {
+    labels: fluxMensuel.labels,
+    datasets: [
+      {label:'Entrées', data:fluxMensuel.entrees, backgroundColor:'#10b98199', borderColor:'#10b981', borderWidth:1},
+      {label:'Sorties', data:fluxMensuel.sorties, backgroundColor:'#ef444499', borderColor:'#ef4444', borderWidth:1},
+    ],
+  };
+  const fluxMensuelVide = fluxMensuel.entrees.every(v=>v===0) && fluxMensuel.sorties.every(v=>v===0);
+
   // Ordered visible widget list
   const allWidgetIds = DASHBOARD_WIDGETS.map(w=>w.id);
   const orderedWidgets = [...widgetOrder.filter(id=>allWidgetIds.includes(id)), ...allWidgetIds.filter(id=>!widgetOrder.includes(id))];
@@ -711,14 +734,11 @@ function Dashboard({data, onNavigate, setData}) {
       ) : null;
       case 'flux': return (
         <DraggableWidget key={id} {...wProps(id)}>
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-            <h2 className="text-base font-semibold text-gray-800 mb-4">📊 Flux financiers</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <KPICard label="Entrées" value={fmt(stats.totalEntrees)} color="green" icon="⬆️"/>
-              <KPICard label="Sorties" value={fmt(stats.totalSorties)} color="red" icon="⬇️"/>
-              <KPICard label="Balance nette" value={fmt(stats.balance)} color={stats.balance>=0?'blue':'red'} icon="⚖️"/>
-            </div>
-          </div>
+          <ChartBlock title="Évolution mensuelle (12 derniers mois)" icon="📊">
+            {fluxMensuelVide
+              ? <EmptyState message="Aucun flux sur les 12 derniers mois" icon="📊"/>
+              : <div className="h-64"><ChartCanvas type="bar" data={fluxMensuelChartData} options={{maintainAspectRatio:false}}/></div>}
+          </ChartBlock>
         </DraggableWidget>
       );
       case 'tresorerie': return (
@@ -3537,6 +3557,16 @@ function TresorerieModule({data}) {
 const CHART_COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#14b8a6'];
 const MONTH_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
+// Agrège un tableau par mois (clé YYYY-MM) -> {labels:["Jan 24",…], values:[…]}.
+// Sans monthKeys : ne renvoie que les mois présents dans les données (comportement Analytics historique).
+// Avec monthKeys (axe fixe, ex. 12 derniers mois) : renvoie ces mois-là, 0 pour ceux sans données.
+function byMonth(arr, getDate, getValue, monthKeys) {
+  const map = {};
+  arr.forEach(item => { const k=(getDate(item)||'').substring(0,7); if(k.length===7) map[k]=(map[k]||0)+getValue(item); });
+  const keys = monthKeys || Object.keys(map).sort();
+  return {labels: keys.map(k=>{const[y,m]=k.split('-');return MONTH_SHORT[+m-1]+' '+y.slice(2);}), values:keys.map(k=>map[k]||0)};
+}
+
 function ChartBlock({title, icon, children}) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
@@ -3614,13 +3644,7 @@ function AnalyticsModule({data}) {
     return map;
   }, [entries]);
 
-  // Helper: group by YYYY-MM and sort
-  const byMonth = (arr, getDate, getValue) => {
-    const map = {};
-    arr.forEach(item => { const k=(getDate(item)||'').substring(0,7); if(k.length===7) map[k]=(map[k]||0)+getValue(item); });
-    const keys = Object.keys(map).sort();
-    return {labels: keys.map(k=>{const[y,m]=k.split('-');return MONTH_SHORT[+m-1]+' '+y.slice(2);}), values:keys.map(k=>map[k])};
-  };
+  // Helper byMonth : désormais fonction globale (réutilisée par le Dashboard). Voir def près de MONTH_SHORT.
 
   // 3. CA cumulé (période)
   const caCumule = React.useMemo(() => {
