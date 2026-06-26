@@ -348,30 +348,34 @@ function PeriodeFilter({periodeId, setPeriodeId, dateDebut, setDateDebut, dateFi
   const yearLabel = isYear ? periodeId.slice(1) : null;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex gap-1 flex-wrap">
+      <div className="flex gap-1 flex-wrap items-center">
         {PERIOD_SHORTCUTS.filter(s=>s.id!=='annee').map(s => (
-          <button key={s.id} onClick={() => { setPeriodeId(s.id); setShowYears(false); }}
-            className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${periodeId===s.id?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            {s.label}
-          </button>
-        ))}
-        {/* Year selector */}
-        <div className="relative">
-          <button onClick={()=>setShowYears(v=>!v)}
-            className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${isYear?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            {isYear ? yearLabel : 'Année ▾'}
-          </button>
-          {showYears && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 p-1 min-w-[80px]">
-              {YEARS_RANGE.map(y => (
-                <button key={y.id} onClick={()=>{setPeriodeId(y.id);setShowYears(false);}}
-                  className={`block w-full text-left px-3 py-1.5 text-xs rounded-lg hover:bg-blue-50 ${periodeId===y.id?'text-blue-700 font-semibold':'text-gray-700'}`}>
-                  {y.label}
+          <React.Fragment key={s.id}>
+            <button onClick={() => { setPeriodeId(s.id); setShowYears(false); }}
+              className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${periodeId===s.id?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              {s.label}
+            </button>
+            {/* Year selector — placé juste après "Trimestre" (progression mois→trimestre→année) */}
+            {s.id==='trimestre' && (
+              <div className="relative">
+                <button onClick={()=>setShowYears(v=>!v)}
+                  className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${isYear?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  {isYear ? yearLabel : 'Année ▾'}
                 </button>
-              ))}
-            </div>
-          )}
-        </div>
+                {showYears && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 p-1 min-w-[80px]">
+                    {YEARS_RANGE.map(y => (
+                      <button key={y.id} onClick={()=>{setPeriodeId(y.id);setShowYears(false);}}
+                        className={`block w-full text-left px-3 py-1.5 text-xs rounded-lg hover:bg-blue-50 ${periodeId===y.id?'text-blue-700 font-semibold':'text-gray-700'}`}>
+                        {y.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </React.Fragment>
+        ))}
       </div>
       {periodeId==='custom' && (
         <div className="flex items-center gap-2 flex-wrap">
@@ -891,6 +895,7 @@ function Dashboard({data, onNavigate, setData}) {
         <h1 className="text-2xl font-bold text-gray-800">Tableau de bord</h1>
         <Btn variant="success" size="sm" onClick={()=>setPayModalOpen(true)}>+ Paiement</Btn>
         <div className="ml-auto flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500">Période :</span>
           <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
           <button onClick={()=>setCustomizing(v=>!v)} className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${customizing?'bg-blue-100 text-blue-700':'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
             {customizing ? '✓ Terminer' : '⚙️ Personnaliser'}
@@ -4038,7 +4043,10 @@ function PilotageModule({data}) {
           <h1 className="text-xl font-bold text-gray-800">Vue Dirigeant</h1>
           <p className="text-xs text-gray-400 mt-0.5">Indicateurs stratégiques de pilotage</p>
         </div>
-        <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500">Période :</span>
+          <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
+        </div>
       </div>
 
       {/* Résumé narratif automatique */}
