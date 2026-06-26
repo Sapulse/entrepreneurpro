@@ -578,7 +578,7 @@ function Dashboard({data, onNavigate, setData}) {
     const nonAnnule = data.contracts.filter(c => c.statut !== 'Annulé');
     const caSigne = nonAnnule.filter(c=>inPeriode(c.dateDebut, range)).reduce((s,c) => s + (Number(c.montant)||0), 0);
     const caEncaisse = filteredEntries.filter(e=>e.type==='contract').reduce((s,e)=>s+e.montant, 0);
-    const potentiel = data.clients.reduce((s,cl) => s + (Number(cl.potentiel)||0), 0);
+    const potentiel = data.clients.filter(cl => cl.etape !== 'Client').reduce((s,cl) => s + (Number(cl.potentiel)||0), 0);
 
     const mickaPay = filteredEntries.filter(e=>e.type==='contract'&&e.assignedTo==='Micka').reduce((s,e)=>s+e.montant,0);
     const cesarPay = filteredEntries.filter(e=>e.type==='contract'&&e.assignedTo==='César').reduce((s,e)=>s+e.montant,0);
@@ -2013,7 +2013,7 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
                     {CRM_STAGES.map(s=><option key={s}>{s}</option>)}
                   </select>
                 </div>
-                <div><span className="text-gray-500">Potentiel:</span> <span className="font-semibold text-blue-700">{fmt(form.potentiel)}</span></div>
+                {form.etape !== 'Client' && <div><span className="text-gray-500">Potentiel:</span> <span className="font-semibold text-blue-700">{fmt(form.potentiel)}</span></div>}
                 <div><span className="text-gray-500">CA généré:</span> <span className="font-semibold text-green-700">{fmt(caGenere)}</span></div>
                 {form.adresse && <div className="col-span-2"><span className="text-gray-500">Adresse:</span> <span className="font-medium">{form.adresse}</span></div>}
                 {form.siret && <div><span className="text-gray-500">SIRET:</span> <span className="font-medium font-mono text-sm">{form.siret}</span></div>}
@@ -2048,7 +2048,7 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
                   <div><label className="block text-xs font-medium text-gray-600 mb-1">Recommandé par</label><input className={inputCls} value={form.recommandePar||''} onChange={e=>setForm(f=>({...f,recommandePar:e.target.value}))}/></div>
                 )}
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">Étape</label><select className={selectCls} value={form.etape||'Contact'} onChange={e=>setForm(f=>({...f,etape:e.target.value}))}>{CRM_STAGES.map(s=><option key={s}>{s}</option>)}</select></div>
-                <div><label className="block text-xs font-medium text-gray-600 mb-1">Potentiel (€)</label><input className={inputCls} type="number" value={form.potentiel||''} onChange={e=>setForm(f=>({...f,potentiel:e.target.value}))}/></div>
+                {form.etape !== 'Client' && <div><label className="block text-xs font-medium text-gray-600 mb-1">Potentiel (€)</label><input className={inputCls} type="number" value={form.potentiel||''} onChange={e=>setForm(f=>({...f,potentiel:e.target.value}))}/></div>}
                 <div className="col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Adresse</label><input className={inputCls} value={form.adresse||''} onChange={e=>setForm(f=>({...f,adresse:e.target.value}))} placeholder="Adresse physique (optionnel)"/></div>
                 <div><label className="block text-xs font-medium text-gray-600 mb-1">SIRET</label><input className={inputCls} value={form.siret||''} onChange={e=>setForm(f=>({...f,siret:e.target.value}))} placeholder="N° SIRET (optionnel)"/></div>
               </div>
@@ -2360,7 +2360,7 @@ function CRMModule({data, setData, onNavigate}) {
               <div><label className="block text-xs font-medium text-gray-600 mb-1">Recommandé par</label><input className={inputCls} value={newForm.recommandePar||''} onChange={e=>setNewForm(f=>({...f,recommandePar:e.target.value}))} placeholder="Nom du recommandant"/></div>
             )}
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Étape</label><select className={selectCls} value={newForm.etape} onChange={e=>setNewForm(f=>({...f,etape:e.target.value}))}>{CRM_STAGES.map(s=><option key={s}>{s}</option>)}</select></div>
-            <div><label className="block text-xs font-medium text-gray-600 mb-1">Potentiel (€)</label><input className={inputCls} type="number" value={newForm.potentiel} onChange={e=>setNewForm(f=>({...f,potentiel:e.target.value}))}/></div>
+            {newForm.etape !== 'Client' && <div><label className="block text-xs font-medium text-gray-600 mb-1">Potentiel (€)</label><input className={inputCls} type="number" value={newForm.potentiel} onChange={e=>setNewForm(f=>({...f,potentiel:e.target.value}))}/></div>}
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Date entrée</label><input className={inputCls} type="date" value={newForm.dateEntree} onChange={e=>setNewForm(f=>({...f,dateEntree:e.target.value}))}/></div>
             <div className="col-span-2"><label className="block text-xs font-medium text-gray-600 mb-1">Adresse</label><input className={inputCls} value={newForm.adresse||''} onChange={e=>setNewForm(f=>({...f,adresse:e.target.value}))} placeholder="Adresse physique (optionnel)"/></div>
             <div><label className="block text-xs font-medium text-gray-600 mb-1">SIRET</label><input className={inputCls} value={newForm.siret||''} onChange={e=>setNewForm(f=>({...f,siret:e.target.value}))} placeholder="N° SIRET (optionnel)"/></div>
