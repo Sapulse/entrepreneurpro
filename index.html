@@ -415,11 +415,129 @@ function DraggableWidget({id, label, customizing, onDragStart, onDrop, hidden, o
 // ============================================================
 // DASHBOARD MODULE
 // ============================================================
-function Dashboard({data, onNavigate}) {
+// Raccourci "+ Paiement" : enregistre un encaissement client en réutilisant
+// EXACTEMENT la logique de ContractsModule.handleSave (persistance via setData → saveData).
+function QuickPaymentModal({open, onClose, data, setData}) {
+  const addToast = useToast();
+  const [contractId, setContractId] = React.useState('');
+  const [montant, setMontant] = React.useState('');
+  const [date, setDate] = React.useState(todayStr());
+  const [note, setNote] = React.useState('');
+  const [payAssignedTo, setPayAssignedTo] = React.useState('Micka');
+  const [showAll, setShowAll] = React.useState(false);
+
+  // Liste affichée : contrats non soldés (reste > 0) triés par reste décroissant,
+  // ou tous les contrats non annulés si "Afficher tous les contrats" est coché.
+  const contractList = React.useMemo(() => {
+    return (data.contracts||[])
+      .filter(c => c.statut !== 'Annulé')
+      .map(c => {
+        const paid = (c.payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0);
+        return {...c, reste:(Number(c.montant)||0) - paid};
+      })
+      .filter(c => showAll || c.reste > 0)
+      .sort((a,b) => b.reste - a.reste);
+  }, [data.contracts, showAll]);
+
+  // À l'ouverture : réinitialiser et pré-sélectionner le contrat au plus gros reste (objectif 2 clics).
+  React.useEffect(() => {
+    if(open) {
+      setMontant(''); setNote(''); setDate(todayStr()); setPayAssignedTo('Micka'); setShowAll(false);
+      const firstUnpaid = (data.contracts||[])
+        .filter(c => c.statut !== 'Annulé')
+        .map(c => ({...c, reste:(Number(c.montant)||0) - (c.payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0)}))
+        .filter(c => c.reste > 0)
+        .sort((a,b)=>b.reste-a.reste)[0];
+      setContractId(firstUnpaid ? firstUnpaid.id : '');
+    }
+  }, [open]);
+
+  const selected = (data.contracts||[]).find(c => c.id === contractId);
+
+  const handleSave = () => {
+    if(!contractId) { addToast('Sélectionnez un contrat','error'); return; }
+    if(montant === '' || isNaN(Number(montant))) { addToast('Montant invalide','error'); return; }
+    const target = (data.contracts||[]).find(c => c.id === contractId);
+    if(!target) { addToast('Contrat introuvable','error'); return; }
+    // Format EXACT d'un paiement existant (cf. addPayment du module Contrats)
+    const p = {id:genId(), date, montant:Number(montant), auteur:'Client', note};
+    if(target.assignedTo === 'Les deux') p.payAssignedTo = payAssignedTo;
+    // Persistance via le MÊME chemin que ContractsModule.handleSave → useEffect → saveData (serveur)
+    const newContracts = data.contracts.map(c => c.id===contractId ? {...c, payments:[...(c.payments||[]), p]} : c);
+    setData(d => ({...d, contracts:newContracts}));
+    addToast('Paiement enregistré','success');
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="💰 Enregistrer un paiement" size="md">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Contrat <span className="text-red-500">*</span></label>
+          {contractList.length === 0 ? (
+            <div className="text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+              {showAll ? 'Aucun contrat disponible.' : 'Aucun contrat avec un reste à encaisser. Cochez « Afficher tous les contrats » ci-dessous.'}
+            </div>
+          ) : (
+            <select className={selectCls} value={contractId} onChange={e=>setContractId(e.target.value)}>
+              <option value="">— Choisir un contrat —</option>
+              {contractList.map(c => (
+                <option key={c.id} value={c.id}>{c.client} · {c.prestation} — reste {fmt(c.reste)}</option>
+              ))}
+            </select>
+          )}
+          <label className="flex items-center gap-2 mt-2 text-xs text-gray-500 cursor-pointer">
+            <input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)} className="rounded border-gray-300"/>
+            Afficher tous les contrats (y compris soldés)
+          </label>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Montant (€) <span className="text-red-500">*</span></label>
+            <input className={inputCls} type="number" step="0.01" value={montant} onChange={e=>setMontant(e.target.value)} placeholder="0" autoFocus/>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+            <input className={inputCls} type="date" value={date} onChange={e=>setDate(e.target.value)}/>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Note</label>
+          <input className={inputCls} value={note} onChange={e=>setNote(e.target.value)} placeholder="Acompte, solde..."/>
+        </div>
+
+        {selected && selected.assignedTo === 'Les deux' && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Qui a encaissé</label>
+            <select className={selectCls} value={payAssignedTo} onChange={e=>setPayAssignedTo(e.target.value)}>
+              {ASSIGNEES.map(a => <option key={a}>{a}</option>)}
+            </select>
+          </div>
+        )}
+
+        {selected && (() => {
+          const paid = (selected.payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0);
+          const reste = (Number(selected.montant)||0) - paid;
+          return <div className="text-xs text-gray-400">Reste à encaisser sur ce contrat : <span className="font-semibold text-gray-600">{fmt(reste)}</span></div>;
+        })()}
+
+        <div className="flex justify-end gap-2 pt-3 border-t">
+          <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+          <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function Dashboard({data, onNavigate, setData}) {
   const [periodeId, setPeriodeId] = React.useState('tout');
   const [dateDebut, setDateDebut] = React.useState('');
   const [dateFin, setDateFin] = React.useState('');
   const [customizing, setCustomizing] = React.useState(false);
+  const [payModalOpen, setPayModalOpen] = React.useState(false); // Raccourci "+ Paiement"
   const [widgetOrder, setWidgetOrder] = React.useState(() => {
     const p = loadUIPrefs();
     return p.dashWidgetOrder || DASHBOARD_WIDGETS.map(w=>w.id);
@@ -772,6 +890,7 @@ function Dashboard({data, onNavigate}) {
       <div className="flex flex-wrap items-center gap-3 mb-2">
         <h1 className="text-2xl font-bold text-gray-800">Tableau de bord</h1>
         <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{APP_VERSION}</span>
+        <Btn variant="success" size="sm" onClick={()=>setPayModalOpen(true)}>+ Paiement</Btn>
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
           <button onClick={()=>setCustomizing(v=>!v)} className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${customizing?'bg-blue-100 text-blue-700':'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
@@ -780,6 +899,7 @@ function Dashboard({data, onNavigate}) {
         </div>
       </div>
       {orderedWidgets.map(id => renderWidget(id)).filter(Boolean)}
+      <QuickPaymentModal open={payModalOpen} onClose={()=>setPayModalOpen(false)} data={data} setData={setData}/>
     </div>
   );
 }
@@ -4718,7 +4838,7 @@ function App() {
   const renderModule = () => {
     const wrap = (component) => <ErrorBoundary key={activeModule}>{component}</ErrorBoundary>;
     switch(activeModule) {
-      case 'dashboard': return wrap(<Dashboard data={data} onNavigate={onNavigate}/>);
+      case 'dashboard': return wrap(<Dashboard data={data} onNavigate={onNavigate} setData={setData}/>);
       case 'pilotage': return wrap(<PilotageModule data={data}/>);
       case 'analytics': return wrap(<AnalyticsModule data={data}/>);
       case 'quotes': return wrap(<QuotesModule data={data} setData={setData} onNavigate={onNavigate}/>);
@@ -4730,7 +4850,7 @@ function App() {
       case 'ledger': return wrap(<LedgerModule data={data} onNavigate={onNavigate}/>);
       case 'tresorerie': return wrap(<TresorerieModule data={data}/>);
       case 'resources': return wrap(<DriveModule data={data} setData={setData}/>);
-      default: return wrap(<Dashboard data={data} onNavigate={onNavigate}/>);
+      default: return wrap(<Dashboard data={data} onNavigate={onNavigate} setData={setData}/>);
     }
   };
 
