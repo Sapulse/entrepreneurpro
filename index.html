@@ -4192,7 +4192,7 @@ function SyncStatusButton({syncStatus}) {
   const colorClass = syncStatus==='ok' ? 'text-green-600' : syncStatus==='empty' ? 'text-amber-600' :
     syncStatus==='loading' ? 'text-gray-400' : syncStatus==='conflict' ? 'text-orange-600' : 'text-red-500';
   const icon = syncStatus==='ok'?'☁️':syncStatus==='empty'?'🟡':syncStatus==='loading'?'⏳':syncStatus==='conflict'?'⚡':'⚠️';
-  const label = syncStatus==='ok'?'Supabase connecté':syncStatus==='empty'?'Base distante vide':
+  const label = syncStatus==='ok'?'Serveur local connecté':syncStatus==='empty'?'Base distante vide':
     syncStatus==='loading'?'Connexion...':syncStatus==='conflict'?'Conflit détecté':'Erreur sync – mode local';
 
   return (<>
@@ -4462,7 +4462,7 @@ function App() {
             setData(secured);
             try { localStorage.setItem(LS_KEY, JSON.stringify(secured)); } catch(e) {}
             addSyncLog('CONFLICT_AUTO_RESOLVED', `v=${vrow?.version||'?'} from entity tables`);
-            addToast('Données rechargées depuis Supabase (conflit résolu automatiquement)', 'info');
+            addToast('Données rechargées depuis le serveur local (conflit résolu automatiquement)', 'info');
             setSyncStatus('ok');
             return;
           }
@@ -4477,7 +4477,7 @@ function App() {
           setData(remote);
           try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
           addSyncLog('CONFLICT_AUTO_RESOLVED', `v=${rows.version||'?'} fallback`);
-          addToast('Données rechargées depuis Supabase (conflit résolu automatiquement)', 'info');
+          addToast('Données rechargées depuis le serveur local (conflit résolu automatiquement)', 'info');
           setSyncStatus('ok');
         }
       } catch(e) { console.warn('[SYNC] Auto-résolution conflit échouée:', e); }
@@ -4729,7 +4729,7 @@ function App() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="text-4xl mb-4 animate-pulse">☁️</div>
-          <div className="text-sm text-gray-500">Connexion à Supabase...</div>
+          <div className="text-sm text-gray-500">Connexion au serveur local...</div>
         </div>
       </div>
     );
@@ -4832,7 +4832,7 @@ function App() {
           <div className="bg-red-50 border-b-2 border-red-300 px-4 py-2 flex items-center gap-2 flex-wrap">
             <span className="text-red-500">⚠️</span>
             <div className="flex-1 min-w-0">
-              <span className="font-semibold text-red-700 text-xs">Erreur de synchronisation Supabase</span>
+              <span className="font-semibold text-red-700 text-xs">Erreur de synchronisation serveur local</span>
               <span className="text-red-600 text-xs ml-2">— Modifications sauvegardées localement. Cliquez sur l'indicateur ☁️ en bas de la sidebar pour voir le journal.</span>
               {lastErr && <div className="text-red-500 text-xs mt-0.5 font-mono truncate">{lastErr}</div>}
             </div>
@@ -4865,14 +4865,14 @@ function App() {
                   try { localStorage.setItem(LS_KEY, JSON.stringify(remote)); } catch(e) {}
                   addSyncLog('CONFLICT_MANUAL_RESOLVED', `v=${rows.version||'?'}`);
                   setSyncStatus('ok');
-                  addToast('Données rechargées depuis Supabase ☁️', 'success');
+                  addToast('Données rechargées depuis le serveur local ☁️', 'success');
                 } else {
                   addToast('Rechargement échoué : ' + (error?.message||'inconnu'), 'error');
                 }
               }}
               className="px-3 py-1 bg-orange-600 text-white text-xs font-semibold rounded hover:bg-orange-700 transition-colors"
             >
-              Recharger depuis Supabase
+              Recharger depuis le serveur local
             </button>
           </div>
         </div>

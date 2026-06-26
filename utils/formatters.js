@@ -7,7 +7,7 @@ const genId = () => 'id_' + Date.now().toString(36) + '_' + Math.random().toStri
 const todayStr = () => new Date().toISOString().split('T')[0];
 const fmt = (n) => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0);
 const normalize = (s) => (s||'').trim().replace(/\s+/g,' ').toLowerCase();
-const formatDate = (d) => d ? new Date(d+'T00:00:00').toLocaleDateString('fr-FR') : '';
+const formatDate = (d) => { if(!d) return ''; const s = String(d).includes('T') ? String(d) : d+'T00:00:00'; const dt = new Date(s); return isNaN(dt) ? '' : dt.toLocaleDateString('fr-FR'); };
 const daysUntil = (dateStr) => { if(!dateStr) return null; return Math.ceil((new Date(dateStr+'T23:59:59')-new Date())/(1000*60*60*24)); };
 const calcPaymentStatus = (montant, payments) => { const total=(payments||[]).reduce((s,p)=>s+(Number(p.montant)||0),0); if(total<=0)return'Non payé'; if(total>=montant)return'Payé'; return'Partiel'; };
 const currentMonthKey = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
