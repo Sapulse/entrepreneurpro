@@ -889,7 +889,6 @@ function Dashboard({data, onNavigate, setData}) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3 mb-2">
         <h1 className="text-2xl font-bold text-gray-800">Tableau de bord</h1>
-        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{APP_VERSION}</span>
         <Btn variant="success" size="sm" onClick={()=>setPayModalOpen(true)}>+ Paiement</Btn>
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
@@ -3667,7 +3666,6 @@ function AnalyticsModule({data}) {
     <div className="space-y-6">
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-2xl font-bold text-gray-800">Analytics / Pilotage</h1>
-        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{APP_VERSION}</span>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
