@@ -3646,19 +3646,6 @@ function AnalyticsModule({data}) {
 
   // Helper byMonth : désormais fonction globale (réutilisée par le Dashboard). Voir def près de MONTH_SHORT.
 
-  // 3. CA cumulé (période)
-  const caCumule = React.useMemo(() => {
-    const bm = byMonth(filteredEntries.filter(e=>e.type==='contract'), e=>e.date, e=>e.montant);
-    let cum=0; return {labels:bm.labels, values:bm.values.map(v=>{cum+=v;return cum;})};
-  }, [filteredEntries]);
-
-  // 4. Dépenses par catégorie (période)
-  const depensesCategorie = React.useMemo(() => {
-    const map={};
-    filteredExpenses.forEach(e=>{const cat=e.categorie||'Autre'; map[cat]=(map[cat]||0)+Math.abs(Number(e.montant)||0);});
-    return map;
-  }, [filteredExpenses]);
-
   // 5. Dépenses mensuelles (période)
   const depensesMensuelles = React.useMemo(() => byMonth(filteredExpenses, e=>e.date, e=>Math.abs(Number(e.montant)||0)), [filteredExpenses]);
 
@@ -3671,14 +3658,7 @@ function AnalyticsModule({data}) {
     return map;
   }, [filteredContracts, periodeRange]);
 
-  // 7. Encaissements par associé (période)
-  const caAssocie = React.useMemo(() => {
-    const map={Micka:0,César:0};
-    filteredEntries.filter(e=>e.type==='contract').forEach(e=>{if(map[e.assignedTo]!==undefined)map[e.assignedTo]+=e.montant;});
-    return map;
-  }, [filteredEntries]);
-
-  // 7b. Dépenses (avances perso) par associé (période)
+  // Dépenses (avances perso) par associé (période) — alimente les KPI cards Dép. Micka/César
   const depAssocie = React.useMemo(() => {
     const map={Micka:0,César:0};
     filteredExpenses.forEach(e=>{if(map[e.payePar]!==undefined)map[e.payePar]+=Math.abs(Number(e.montant)||0);});
@@ -3691,31 +3671,14 @@ function AnalyticsModule({data}) {
     c=>c.dateSignature, c=>Number(c.montant)||0
   ), [filteredContracts, periodeRange]);
 
-  // 9. CA par type de paiement (période)
-  const caByPaymentType = React.useMemo(() => {
-    const map={};
-    filteredContracts.filter(c=>c.dateSignature&&inPeriode(c.dateSignature,periodeRange)).forEach(c=>{
-      const t=c.typePaiement||'Virement'; map[t]=(map[t]||0)+(Number(c.montant)||0);
-    });
-    return map;
-  }, [filteredContracts, periodeRange]);
-
   const noLegend = {plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw||0)}}}};
   const withLegendRight = {plugins:{legend:{display:true,position:'right',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw||0)}}}};
 
   const caMonthlyChartData = {labels:MONTH_SHORT, datasets:allYears.map((y,i)=>({label:String(y),data:caMonthlyByYear[y]||Array(12).fill(0),backgroundColor:CHART_COLORS[i%CHART_COLORS.length]+'aa',borderColor:CHART_COLORS[i%CHART_COLORS.length],borderWidth:1}))};
-  const caAnnuelChartData = {labels:allYears.map(String), datasets:[{label:'CA Total',data:allYears.map(y=>caAnnuel[y]||0),backgroundColor:allYears.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]+'aa'),borderColor:allYears.map((_,i)=>CHART_COLORS[i%CHART_COLORS.length]),borderWidth:1}]};
-  const caCumuleChartData = {labels:caCumule.labels, datasets:[{label:'CA cumulé',data:caCumule.values,fill:true,backgroundColor:'#6366f118',borderColor:'#6366f1',tension:0.4,pointBackgroundColor:'#6366f1',pointRadius:4}]};
-  const depCatLabels = Object.keys(depensesCategorie).sort((a,b)=>depensesCategorie[b]-depensesCategorie[a]);
-  const depCatChartData = {labels:depCatLabels, datasets:[{data:depCatLabels.map(k=>depensesCategorie[k]),backgroundColor:CHART_COLORS.slice(0,depCatLabels.length),borderWidth:1}]};
   const depMensuellesChartData = {labels:depensesMensuelles.labels, datasets:[{label:'Dépenses',data:depensesMensuelles.values,backgroundColor:'#ef444488',borderColor:'#ef4444',borderWidth:1}]};
   const clientLabels = Object.keys(caClient).sort((a,b)=>caClient[b]-caClient[a]);
   const caClientChartData = {labels:clientLabels, datasets:[{label:'CA',data:clientLabels.map(k=>caClient[k]),backgroundColor:CHART_COLORS.slice(0,clientLabels.length).map(c=>c+'bb'),borderColor:CHART_COLORS.slice(0,clientLabels.length),borderWidth:1}]};
-  const associeChartData = {labels:['Micka','César'], datasets:[{label:'Encaissements',data:[caAssocie.Micka,caAssocie.César],backgroundColor:['#6366f1aa','#10b981aa'],borderColor:['#6366f1','#10b981'],borderWidth:1}]};
-  const depAssocieChartData = {labels:['Micka','César'], datasets:[{label:'Dépenses perso',data:[depAssocie.Micka,depAssocie.César],backgroundColor:['#6366f188','#10b98188'],borderColor:['#6366f1','#10b981'],borderWidth:1}]};
   const caSignatureChartData = {labels:caSignature.labels, datasets:[{label:'CA signé',data:caSignature.values,backgroundColor:'#8b5cf6aa',borderColor:'#8b5cf6',borderWidth:1}]};
-  const payTypeLabels = Object.keys(caByPaymentType).sort((a,b)=>caByPaymentType[b]-caByPaymentType[a]);
-  const caByPaymentTypeChartData = {labels:payTypeLabels, datasets:[{data:payTypeLabels.map(k=>caByPaymentType[k]),backgroundColor:CHART_COLORS.slice(0,payTypeLabels.length),borderWidth:1}]};
 
   const totalCAperiod = filteredEntries.filter(e=>e.type==='contract').reduce((s,e)=>s+e.montant,0);
   const totalDepPeriod = filteredExpenses.reduce((s,e)=>s+Math.abs(Number(e.montant)||0),0);
@@ -3748,32 +3711,14 @@ function AnalyticsModule({data}) {
             <ChartCanvas type="bar" data={caMonthlyChartData}/>
           </ChartBlock>
         </div>
-        <ChartBlock title="CA annuel comparatif (global)" icon="📊">
-          <ChartCanvas type="bar" data={caAnnuelChartData} options={noLegend}/>
-        </ChartBlock>
-        <ChartBlock title={`CA cumulé – ${periodLabel}`} icon="📉">
-          {caCumule.labels.length===0 ? <EmptyState message="Aucun encaissement" icon="📉"/> : <ChartCanvas type="line" data={caCumuleChartData} options={noLegend}/>}
-        </ChartBlock>
-        <ChartBlock title={`Dépenses par catégorie – ${periodLabel}`} icon="💸">
-          {depCatLabels.length===0 ? <EmptyState message="Aucune dépense" icon="💸"/> : <ChartCanvas type="doughnut" data={depCatChartData} options={withLegendRight}/>}
-        </ChartBlock>
         <ChartBlock title={`Dépenses mensuelles – ${periodLabel}`} icon="📅">
           {depensesMensuelles.labels.length===0 ? <EmptyState message="Aucune dépense" icon="📅"/> : <ChartCanvas type="bar" data={depMensuellesChartData} options={noLegend}/>}
         </ChartBlock>
         <ChartBlock title={`CA par client – ${periodLabel}`} icon="🏢">
           {clientLabels.length===0 ? <EmptyState message="Aucun encaissement" icon="🏢"/> : <ChartCanvas type="bar" data={caClientChartData} options={{...noLegend, indexAxis:'y'}}/>}
         </ChartBlock>
-        <ChartBlock title={`Encaissements par associé – ${periodLabel}`} icon="👥">
-          <ChartCanvas type="bar" data={associeChartData} options={noLegend}/>
-        </ChartBlock>
-        <ChartBlock title={`Avances perso par associé – ${periodLabel}`} icon="💸">
-          {(depAssocie.Micka===0&&depAssocie.César===0) ? <EmptyState message="Aucune dépense" icon="💸"/> : <ChartCanvas type="bar" data={depAssocieChartData} options={noLegend}/>}
-        </ChartBlock>
         <ChartBlock title={`CA signé – ${periodLabel}`} icon="✍️">
           {caSignature.labels.length===0 ? <EmptyState message="Aucun contrat signé" icon="✍️"/> : <ChartCanvas type="bar" data={caSignatureChartData} options={noLegend}/>}
-        </ChartBlock>
-        <ChartBlock title={`CA par type de paiement – ${periodLabel}`} icon="💳">
-          {payTypeLabels.length===0 ? <EmptyState message="Aucun contrat signé" icon="💳"/> : <ChartCanvas type="doughnut" data={caByPaymentTypeChartData} options={withLegendRight}/>}
         </ChartBlock>
       </div>
     </div>
