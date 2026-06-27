@@ -224,6 +224,10 @@ const ICONS = {
   'sliders': '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>',
   'list': '<line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/>',
   'inbox': '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  'archive': '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  'lightbulb': '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+  'clock': '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  'zap': '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
 };
 
 const TINT = {
@@ -1191,25 +1195,25 @@ function QuotesModule({data, setData, onNavigate}) {
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Devis</h1>
+        <h1 className="text-[21px] font-medium" style={{color:'var(--text-strong)'}}>Devis</h1>
         <Btn variant="primary" onClick={()=>{setSelected(null);setModalOpen(true);}}>+ Nouveau devis</Btn>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard label="Pipeline devis" value={fmt(txTotal)} color="blue" icon="📋"/>
-        <KPICard label="Acceptés" value={fmt(txAccepte)} color="green" icon="✅"/>
-        <KPICard label="En attente" value={`${txEnvoye} devis`} color="amber" icon="⏳"/>
-        <KPICard label="Taux conversion" value={`${isNaN(tauxConv)?0:tauxConv}%`} color="purple" icon="🎯"/>
+        <KPICard label="Pipeline devis" value={fmt(txTotal)} color="blue" icon="clipboard-list"/>
+        <KPICard label="Acceptés" value={fmt(txAccepte)} color="green" icon="check-circle"/>
+        <KPICard label="En attente" value={`${txEnvoye} devis`} color="amber" icon="hourglass"/>
+        <KPICard label="Taux conversion" value={`${isNaN(tauxConv)?0:tauxConv}%`} color="purple" icon="target"/>
       </div>
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-wrap gap-3 items-center">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-4 flex flex-wrap gap-3 items-center">
         <div className="flex gap-2 flex-wrap">
           {['Tous',...QUOTE_STATUSES].map(s=>(
-            <button key={s} onClick={()=>{setStatusFilter(s);setPage(1);}} className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
+            <button key={s} onClick={()=>{setStatusFilter(s);setPage(1);}} className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s?'bg-[var(--brand-strong)] text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
           ))}
         </div>
         <input className={`${inputCls} w-52 ml-auto`} placeholder="Rechercher..." value={search} onChange={e=>{setSearch(e.target.value);setPage(1);}}/>
       </div>
       {filtered.length===0 ? <EmptyState message="Aucun devis" icon="clipboard-list"/> : (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] overflow-hidden">
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
@@ -1225,7 +1229,7 @@ function QuotesModule({data, setData, onNavigate}) {
                     <td className="px-4 py-3"><StatusBadge status={q.statut}/></td>
                     <td className="px-4 py-3 text-xs text-gray-500">{formatDate(q.dateCreation)}</td>
                     <td className="px-4 py-3 text-xs text-gray-500">{q.dateExpiration?formatDate(q.dateExpiration):'—'}</td>
-                    <td className="px-4 py-3"><button className="text-blue-500 text-xs font-medium">Ouvrir →</button></td>
+                    <td className="px-4 py-3"><button className="text-[var(--brand)] text-xs font-medium">Ouvrir →</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1235,7 +1239,7 @@ function QuotesModule({data, setData, onNavigate}) {
             {paginated.map(q=>(
               <div key={q.id} onClick={()=>{setSelected(q);setModalOpen(true);}} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer">
                 <div><div className="text-sm font-medium">{q.client}</div><div className="text-xs text-gray-400">{q.prestation} · {formatDate(q.dateCreation)}</div></div>
-                <div className="flex items-center gap-2"><StatusBadge status={q.statut}/><span className="text-sm font-bold text-blue-700">{fmt(q.montant)}</span></div>
+                <div className="flex items-center gap-2"><StatusBadge status={q.statut}/><span className="text-sm font-semibold" style={{color:'var(--text-strong)'}}>{fmt(q.montant)}</span></div>
               </div>
             ))}
           </div>
@@ -2601,7 +2605,7 @@ function TaskCard({task, onMove, onEdit, onDelete}) {
   const canRight = idx < statusOrder.length-1;
 
   return (
-    <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 space-y-2">
+    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-3 space-y-2">
       <div className="text-sm font-medium text-gray-800 leading-snug">{task.titre}</div>
       {task.client && <div className="text-xs text-gray-400">{task.client}</div>}
       <div className="flex flex-wrap gap-1">
@@ -2609,8 +2613,8 @@ function TaskCard({task, onMove, onEdit, onDelete}) {
         <StatusBadge status={task.priorite}/>
       </div>
       {task.echeance && (
-        <div className={`text-xs font-medium ${isOverdue?'text-red-600':'text-gray-500'}`}>
-          {isOverdue?'⚠ ':''}{formatDate(task.echeance)}
+        <div className="text-xs font-medium flex items-center gap-1" style={{color: isOverdue?'#E0654F':'var(--text-muted)'}}>
+          {isOverdue && <Icon name="alert-triangle" size={12}/>}{formatDate(task.echeance)}
         </div>
       )}
       <div className="flex items-center justify-between pt-1 border-t border-gray-50">
@@ -2619,7 +2623,7 @@ function TaskCard({task, onMove, onEdit, onDelete}) {
           {canRight && <button onClick={()=>onMove(task,'right')} className="text-gray-300 hover:text-gray-600 text-sm px-1">→</button>}
         </div>
         <div className="flex gap-1">
-          <button onClick={()=>onEdit(task)} className="text-gray-300 hover:text-blue-500 text-xs px-1">✏</button>
+          <button onClick={()=>onEdit(task)} className="text-gray-300 hover:text-[var(--brand)] px-1"><Icon name="pen-line" size={13}/></button>
           <button onClick={()=>onDelete(task.id)} className="text-gray-300 hover:text-red-500 text-sm px-1">&times;</button>
         </div>
       </div>
@@ -2662,7 +2666,7 @@ function TasksModule({data, setData}) {
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Tâches</h1>
+        <h1 className="text-[21px] font-medium" style={{color:'var(--text-strong)'}}>Tâches</h1>
         <Btn variant="primary" onClick={()=>{setSelectedTask(null);setModalOpen(true);}}>+ Nouvelle tâche</Btn>
       </div>
 
@@ -2765,7 +2769,7 @@ function ParcoursFormationCard({parcours, clientLabel, onToggleStep, onArchive, 
   const next = PARCOURS_STEPS.find(s => !etapes[s.key]);
   const isDone = !next;
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5">
       <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
         <div>
           <div className="text-base font-semibold text-gray-800">{parcours.titre}</div>
@@ -2773,7 +2777,7 @@ function ParcoursFormationCard({parcours, clientLabel, onToggleStep, onArchive, 
         </div>
         <div className="flex items-center gap-2">
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${isDone?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}`}>{done}/4</span>
-          <button onClick={onArchive} className="text-gray-300 hover:text-indigo-500 text-sm px-1" title="Archiver">📥</button>
+          <button onClick={onArchive} className="text-gray-300 hover:text-[var(--brand)] px-1" title="Archiver"><Icon name="archive" size={15}/></button>
           <button onClick={onDelete} className="text-gray-300 hover:text-red-500 text-base px-1" title="Supprimer">&times;</button>
         </div>
       </div>
@@ -2807,7 +2811,7 @@ function ParcoursFormationCard({parcours, clientLabel, onToggleStep, onArchive, 
 function ParcoursAccompagnementCard({parcours, clientLabel, onAddEntry, onEditEntry, onToggleEntry, onDeleteEntry, onArchive, onDelete}) {
   const entrees = [...(parcours.entrees||[])].sort((a,b)=>(b.mois||'').localeCompare(a.mois||''));
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5">
       <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
         <div>
           <div className="text-base font-semibold text-gray-800">{parcours.titre}</div>
@@ -2815,7 +2819,7 @@ function ParcoursAccompagnementCard({parcours, clientLabel, onAddEntry, onEditEn
         </div>
         <div className="flex items-center gap-2">
           <Btn variant="outline" size="sm" onClick={onAddEntry}>+ Ce mois</Btn>
-          <button onClick={onArchive} className="text-gray-300 hover:text-indigo-500 text-sm px-1" title="Archiver">📥</button>
+          <button onClick={onArchive} className="text-gray-300 hover:text-[var(--brand)] px-1" title="Archiver"><Icon name="archive" size={15}/></button>
           <button onClick={onDelete} className="text-gray-300 hover:text-red-500 text-base px-1" title="Supprimer">&times;</button>
         </div>
       </div>
@@ -2833,9 +2837,9 @@ function ParcoursAccompagnementCard({parcours, clientLabel, onAddEntry, onEditEn
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={()=>onToggleEntry(e.id)} className={`text-xs font-medium px-2 py-0.5 rounded-full ${e.fait?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}`}>
-                    {e.fait ? '✓ Fait' : '⏳ En cours'}
+                    {e.fait ? '✓ Fait' : 'En cours'}
                   </button>
-                  <button onClick={()=>onEditEntry(e)} className="text-gray-300 hover:text-blue-500 text-xs px-1" title="Éditer">✏</button>
+                  <button onClick={()=>onEditEntry(e)} className="text-gray-300 hover:text-[var(--brand)] px-1" title="Éditer"><Icon name="pen-line" size={13}/></button>
                   <button onClick={()=>onDeleteEntry(e.id)} className="text-gray-300 hover:text-red-500 text-base px-1" title="Supprimer">&times;</button>
                 </div>
               </div>
@@ -2897,9 +2901,9 @@ function ParcoursModule({data, setData}) {
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold text-gray-800">🧭 Parcours</h1>
+        <h1 className="text-[21px] font-medium" style={{color:'var(--text-strong)'}}>Parcours</h1>
         <div className="flex items-center gap-2">
-          <button onClick={()=>setShowArchived(v=>!v)} className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${showArchived?'bg-indigo-100 text-indigo-700':'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+          <button onClick={()=>setShowArchived(v=>!v)} className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${showArchived?'bg-[var(--brand-soft)] text-[var(--brand-strong)]':'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
             {showArchived ? '← Parcours actifs' : 'Voir archivés'}
           </button>
           <Btn variant="primary" onClick={()=>setNewOpen(true)}>+ Nouveau parcours</Btn>
@@ -3936,7 +3940,7 @@ function TresorerieModule({data}) {
 // ============================================================
 // ANALYTICS MODULE
 // ============================================================
-const CHART_COLORS = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#14b8a6'];
+const CHART_COLORS = ['#185FA5','#1D9E75','#BA7517','#534AB7','#E0654F','#06b6d4','#ec4899','#84cc16','#f97316','#14b8a6'];
 const MONTH_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
 // Agrège un tableau par mois (clé YYYY-MM) -> {labels:["Jan 24",…], values:[…]}.
@@ -4062,10 +4066,10 @@ function AnalyticsModule({data}) {
   const withLegendRight = {plugins:{legend:{display:true,position:'right',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw||0)}}}};
 
   const caMonthlyChartData = {labels:MONTH_SHORT, datasets:allYears.map((y,i)=>({label:String(y),data:caMonthlyByYear[y]||Array(12).fill(0),backgroundColor:CHART_COLORS[i%CHART_COLORS.length]+'aa',borderColor:CHART_COLORS[i%CHART_COLORS.length],borderWidth:1}))};
-  const depMensuellesChartData = {labels:depensesMensuelles.labels, datasets:[{label:'Dépenses',data:depensesMensuelles.values,backgroundColor:'#ef444488',borderColor:'#ef4444',borderWidth:1}]};
+  const depMensuellesChartData = {labels:depensesMensuelles.labels, datasets:[{label:'Dépenses',data:depensesMensuelles.values,backgroundColor:'#E0654F88',borderColor:'#E0654F',borderWidth:1}]};
   const clientLabels = Object.keys(caClient).sort((a,b)=>caClient[b]-caClient[a]);
   const caClientChartData = {labels:clientLabels, datasets:[{label:'CA',data:clientLabels.map(k=>caClient[k]),backgroundColor:CHART_COLORS.slice(0,clientLabels.length).map(c=>c+'bb'),borderColor:CHART_COLORS.slice(0,clientLabels.length),borderWidth:1}]};
-  const caSignatureChartData = {labels:caSignature.labels, datasets:[{label:'CA signé',data:caSignature.values,backgroundColor:'#8b5cf6aa',borderColor:'#8b5cf6',borderWidth:1}]};
+  const caSignatureChartData = {labels:caSignature.labels, datasets:[{label:'CA signé',data:caSignature.values,backgroundColor:'#534AB7aa',borderColor:'#534AB7',borderWidth:1}]};
 
   const totalCAperiod = filteredEntries.filter(e=>e.type==='contract').reduce((s,e)=>s+e.montant,0);
   const totalDepPeriod = filteredExpenses.reduce((s,e)=>s+Math.abs(Number(e.montant)||0),0);
@@ -4075,36 +4079,36 @@ function AnalyticsModule({data}) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-2xl font-bold text-gray-800">Analytics / Pilotage</h1>
+        <h1 className="text-[21px] font-medium" style={{color:'var(--text-strong)'}}>Analytics / Pilotage</h1>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-4 space-y-3">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-gray-500">Période :</span>
           <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
         </div>
         <div className="flex gap-3 flex-wrap">
-          <KPICard label={`CA encaissé (${periodLabel})`} value={fmt(totalCAperiod)} color="green" icon="💰"/>
-          <KPICard label={`Dép. Micka (${periodLabel})`} value={fmt(depAssocie.Micka)} color="indigo" icon="💸"/>
-          <KPICard label={`Dép. César (${periodLabel})`} value={fmt(depAssocie.César)} color="green" icon="💸"/>
-          <KPICard label={`Total dépenses (${periodLabel})`} value={fmt(totalDepPeriod)} color="red" icon="📉"/>
-          <KPICard label="CA global (all time)" value={fmt(totalCAGlobal)} color="blue" icon="📊"/>
+          <KPICard label={`CA encaissé (${periodLabel})`} value={fmt(totalCAperiod)} color="green" icon="wallet"/>
+          <KPICard label={`Dép. Micka (${periodLabel})`} value={fmt(depAssocie.Micka)} color="indigo" icon="banknote"/>
+          <KPICard label={`Dép. César (${periodLabel})`} value={fmt(depAssocie.César)} color="green" icon="banknote"/>
+          <KPICard label={`Total dépenses (${periodLabel})`} value={fmt(totalDepPeriod)} color="red" icon="trending-down"/>
+          <KPICard label="CA global (all time)" value={fmt(totalCAGlobal)} color="blue" icon="bar-chart"/>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="lg:col-span-2">
-          <ChartBlock title="CA mensuel par année (comparaison globale)" icon="📈">
+          <ChartBlock title="CA mensuel par année (comparaison globale)" icon="trending-up">
             <ChartCanvas type="bar" data={caMonthlyChartData}/>
           </ChartBlock>
         </div>
-        <ChartBlock title={`Dépenses mensuelles – ${periodLabel}`} icon="📅">
+        <ChartBlock title={`Dépenses mensuelles – ${periodLabel}`} icon="calendar">
           {depensesMensuelles.labels.length===0 ? <EmptyState message="Aucune dépense" icon="calendar"/> : <ChartCanvas type="bar" data={depMensuellesChartData} options={noLegend}/>}
         </ChartBlock>
-        <ChartBlock title={`CA par client – ${periodLabel}`} icon="🏢">
+        <ChartBlock title={`CA par client – ${periodLabel}`} icon="building">
           {clientLabels.length===0 ? <EmptyState message="Aucun encaissement" icon="building"/> : <ChartCanvas type="bar" data={caClientChartData} options={{...noLegend, indexAxis:'y'}}/>}
         </ChartBlock>
-        <ChartBlock title={`CA signé – ${periodLabel}`} icon="✍️">
+        <ChartBlock title={`CA signé – ${periodLabel}`} icon="pen-line">
           {caSignature.labels.length===0 ? <EmptyState message="Aucun contrat signé" icon="pen-line"/> : <ChartCanvas type="bar" data={caSignatureChartData} options={noLegend}/>}
         </ChartBlock>
       </div>
@@ -4264,20 +4268,20 @@ function PilotageModule({data}) {
 
     // === Alertes dirigeant (max 5, triées par gravité) ===
     const alertes = [];
-    if(ratioSeuilMicka >= 1) alertes.push({level:'danger', icon:'🚨', msg:`Seuil AE Micka dépassé : ${fE(mickaCaAnnuel)} / ${fE(seuilMicka)}`});
-    else if(ratioSeuilMicka >= 0.9) alertes.push({level:'danger', icon:'⚡', msg:`Seuil AE Micka critique : ${Math.round(ratioSeuilMicka*100)}% atteint`});
-    else if(ratioSeuilMicka >= 0.8) alertes.push({level:'warning', icon:'📊', msg:`Seuil AE Micka : ${Math.round(ratioSeuilMicka*100)}% atteint`});
-    if(ratioSeuilCesar >= 1) alertes.push({level:'danger', icon:'🚨', msg:`Seuil AE César dépassé : ${fE(cesarCaAnnuel)} / ${fE(seuilCesar)}`});
-    else if(ratioSeuilCesar >= 0.9) alertes.push({level:'danger', icon:'⚡', msg:`Seuil AE César critique : ${Math.round(ratioSeuilCesar*100)}% atteint`});
-    else if(ratioSeuilCesar >= 0.8) alertes.push({level:'warning', icon:'📊', msg:`Seuil AE César : ${Math.round(ratioSeuilCesar*100)}% atteint`});
-    if(evolutionCA !== null && evolutionCA < -15) alertes.push({level:'danger', icon:'📉', msg:`CA en baisse de ${Math.abs(evolutionCA)}% vs période précédente`});
-    if(resteTotal > 10000) alertes.push({level:'warning', icon:'💰', msg:`Reste à encaisser élevé : ${fE(resteTotal)}`});
-    if(caEncaisse > 0 && tauxMarge < 20) alertes.push({level:'warning', icon:'📉', msg:`Taux de marge faible : ${tauxMarge}% (cible > 40%)`});
-    if(ecartDuo > 3000) alertes.push({level:'warning', icon:'⚖️', msg:`Écart duo élevé à rééquilibrer : ${fE(ecartDuo)}`});
-    if(tachesEnRetard > 3) alertes.push({level:'warning', icon:'⏰', msg:`${tachesEnRetard} tâches en retard`});
-    else if(tachesEnRetard > 0) alertes.push({level:'info', icon:'⏰', msg:`${tachesEnRetard} tâche${tachesEnRetard > 1 ? 's' : ''} en retard`});
-    if(dossiersUrgents > 0) alertes.push({level:'warning', icon:'📄', msg:`${dossiersUrgents} dossier${dossiersUrgents > 1 ? 's urgents' : ' urgent'} (fin ≤ 30j)`});
-    if(pipeline < 3) alertes.push({level:'info', icon:'👥', msg:`Pipeline faible : ${pipeline} prospect${pipeline !== 1 ? 's' : ''} en cours`});
+    if(ratioSeuilMicka >= 1) alertes.push({level:'danger', icon:'alert-triangle', msg:`Seuil AE Micka dépassé : ${fE(mickaCaAnnuel)} / ${fE(seuilMicka)}`});
+    else if(ratioSeuilMicka >= 0.9) alertes.push({level:'danger', icon:'zap', msg:`Seuil AE Micka critique : ${Math.round(ratioSeuilMicka*100)}% atteint`});
+    else if(ratioSeuilMicka >= 0.8) alertes.push({level:'warning', icon:'bar-chart', msg:`Seuil AE Micka : ${Math.round(ratioSeuilMicka*100)}% atteint`});
+    if(ratioSeuilCesar >= 1) alertes.push({level:'danger', icon:'alert-triangle', msg:`Seuil AE César dépassé : ${fE(cesarCaAnnuel)} / ${fE(seuilCesar)}`});
+    else if(ratioSeuilCesar >= 0.9) alertes.push({level:'danger', icon:'zap', msg:`Seuil AE César critique : ${Math.round(ratioSeuilCesar*100)}% atteint`});
+    else if(ratioSeuilCesar >= 0.8) alertes.push({level:'warning', icon:'bar-chart', msg:`Seuil AE César : ${Math.round(ratioSeuilCesar*100)}% atteint`});
+    if(evolutionCA !== null && evolutionCA < -15) alertes.push({level:'danger', icon:'trending-down', msg:`CA en baisse de ${Math.abs(evolutionCA)}% vs période précédente`});
+    if(resteTotal > 10000) alertes.push({level:'warning', icon:'wallet', msg:`Reste à encaisser élevé : ${fE(resteTotal)}`});
+    if(caEncaisse > 0 && tauxMarge < 20) alertes.push({level:'warning', icon:'trending-down', msg:`Taux de marge faible : ${tauxMarge}% (cible > 40%)`});
+    if(ecartDuo > 3000) alertes.push({level:'warning', icon:'scale', msg:`Écart duo élevé à rééquilibrer : ${fE(ecartDuo)}`});
+    if(tachesEnRetard > 3) alertes.push({level:'warning', icon:'clock', msg:`${tachesEnRetard} tâches en retard`});
+    else if(tachesEnRetard > 0) alertes.push({level:'info', icon:'clock', msg:`${tachesEnRetard} tâche${tachesEnRetard > 1 ? 's' : ''} en retard`});
+    if(dossiersUrgents > 0) alertes.push({level:'warning', icon:'file-text', msg:`${dossiersUrgents} dossier${dossiersUrgents > 1 ? 's urgents' : ' urgent'} (fin ≤ 30j)`});
+    if(pipeline < 3) alertes.push({level:'info', icon:'users', msg:`Pipeline faible : ${pipeline} prospect${pipeline !== 1 ? 's' : ''} en cours`});
     const alertesSorted = [...alertes].sort((a,b) => ({danger:0,warning:1,info:2}[a.level] - {danger:0,warning:1,info:2}[b.level])).slice(0, 5);
 
     // === Résumé narratif automatique ===
@@ -4368,11 +4372,11 @@ function PilotageModule({data}) {
   };
 
   const Section = ({icon, title, subtitle, children}) => (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-6">
       <div className="flex items-center gap-3 mb-5">
-        <span className="text-2xl">{icon}</span>
+        <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg" style={{color:'var(--brand)', background:'var(--brand-soft)'}}><Icon name={icon} size={18}/></span>
         <div>
-          <h2 className="text-base font-semibold text-gray-800">{title}</h2>
+          <h2 className="text-[14px] font-medium" style={{color:'var(--text-strong)'}}>{title}</h2>
           {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
         </div>
       </div>
@@ -4396,7 +4400,7 @@ function PilotageModule({data}) {
       {/* En-tête */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">Vue Dirigeant</h1>
+          <h1 className="text-[21px] font-medium" style={{color:'var(--text-strong)'}}>Vue Dirigeant</h1>
           <p className="text-xs text-gray-400 mt-0.5">Indicateurs stratégiques de pilotage</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -4406,16 +4410,16 @@ function PilotageModule({data}) {
       </div>
 
       {/* Résumé narratif automatique */}
-      <div className="bg-gradient-to-r from-slate-50 to-blue-50 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
-        <span className="text-xl mt-0.5 flex-shrink-0">💡</span>
+      <div className="bg-[var(--brand-soft)] border border-[var(--border)] rounded-[var(--radius)] p-4 flex items-start gap-3">
+        <span className="mt-0.5 flex-shrink-0" style={{color:'var(--brand)'}}><Icon name="lightbulb" size={20}/></span>
         <p className="text-sm text-slate-700 leading-relaxed font-medium">{stats.narrative}</p>
       </div>
 
       {/* Points d'attention */}
       {stats.alertes.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-base">🔔</span>
+            <span style={{color:'var(--amber)'}}><Icon name="bell" size={16}/></span>
             <h2 className="text-sm font-semibold text-gray-700">Points d'attention</h2>
             <span className="ml-auto text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5 font-medium">{stats.alertes.length}</span>
           </div>
@@ -4424,7 +4428,7 @@ function PilotageModule({data}) {
               const bg = a.level === 'danger' ? 'bg-red-50 border-red-200 text-red-700' : a.level === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-sky-50 border-sky-200 text-sky-700';
               return (
                 <div key={i} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm font-medium ${bg}`}>
-                  <span className="flex-shrink-0">{a.icon}</span>
+                  <span className="flex-shrink-0"><Icon name={a.icon} size={15}/></span>
                   <span>{a.msg}</span>
                 </div>
               );
@@ -4434,7 +4438,7 @@ function PilotageModule({data}) {
       )}
 
       {/* BLOC 1 – Activité commerciale */}
-      <Section icon="📦" title="Activité commerciale" subtitle="Business généré sur la période">
+      <Section icon="package" title="Activité commerciale" subtitle="Business généré sur la période">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
           <KpiBox label="CA signé" value={fmtE(stats.caSigne)} curr={stats.caSigne} prev={stats.prevCaSigne} color="blue"/>
           <KpiBox label="CA encaissé" value={fmtE(stats.caEncaisse)} curr={stats.caEncaisse} prev={stats.prevCaEncaisse} color="green"/>
@@ -4448,7 +4452,7 @@ function PilotageModule({data}) {
       </Section>
 
       {/* BLOC 2 – Rentabilité */}
-      <Section icon="📈" title="Rentabilité" subtitle="Valeur réelle générée par l'activité">
+      <Section icon="trending-up" title="Rentabilité" subtitle="Valeur réelle générée par l'activité">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <KpiBox label="Dépenses totales" value={fmtE(stats.totalDepenses)} curr={stats.totalDepenses} prev={stats.prevDepenses} lowerIsBetter={true} color="red"/>
           <KpiBox label="Marge brute" value={fmtE(stats.margeBrute)} curr={stats.margeBrute} prev={stats.prevMargeBrute} color={stats.margeBrute >= 0 ? 'green' : 'red'}/>
@@ -4494,7 +4498,7 @@ function PilotageModule({data}) {
       </Section>
 
       {/* BLOC 3 – Trésorerie */}
-      <Section icon="💰" title="Trésorerie" subtitle="Synthèse — détail complet dans l'onglet Trésorerie">
+      <Section icon="wallet" title="Trésorerie" subtitle="Synthèse — détail complet dans l'onglet Trésorerie">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <KpiBox label="Trésorerie réelle" value={fmtE(stats.tresoReelle)} curr={stats.tresoReelle} prev={stats.prevTresoReelle} color={stats.tresoReelle >= 0 ? 'green' : 'red'}/>
           <KpiBox label="Trésorerie projetée" value={fmtE(stats.tresoProjetee)} color={stats.tresoProjetee >= 0 ? 'blue' : 'amber'}/>
@@ -4533,7 +4537,7 @@ function PilotageModule({data}) {
       </Section>
 
       {/* BLOC 4 – Opérations */}
-      <Section icon="⚙️" title="Opérations" subtitle="Est-ce que l'activité tourne bien au quotidien ?">
+      <Section icon="settings" title="Opérations" subtitle="Est-ce que l'activité tourne bien au quotidien ?">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <KpiBox label="Contrats en cours" value={String(stats.contratsEnCours)} color="blue"/>
           <KpiBox label="Tâches en retard" value={String(stats.tachesEnRetard)} color={stats.tachesEnRetard === 0 ? 'green' : stats.tachesEnRetard <= 3 ? 'amber' : 'red'}/>
@@ -4543,7 +4547,7 @@ function PilotageModule({data}) {
       </Section>
 
       {/* BLOC 5 – Croissance */}
-      <Section icon="🚀" title="Croissance" subtitle="Est-ce que l'activité prépare l'avenir ?">
+      <Section icon="rocket" title="Croissance" subtitle="Est-ce que l'activité prépare l'avenir ?">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <KpiBox label="Nouveaux clients" value={String(stats.nouveauxClients)} curr={stats.nouveauxClients} prev={stats.prevNouveauxClients} sub="Passés en statut Client" color="green"/>
           <KpiBox label="Pipeline prospects" value={String(stats.pipeline)} sub={`Potentiel ${fmtE(stats.potentielPipeline)}`} color="purple"/>
