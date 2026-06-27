@@ -2587,6 +2587,272 @@ function TasksModule({data, setData}) {
 }
 
 // ============================================================
+// PARCOURS MODULE (suivi des prestations clients)
+// Front uniquement — persistance localStorage via setData (data.parcours).
+// ============================================================
+const PARCOURS_STEPS = [
+  {key:'devis', label:'Devis'},
+  {key:'convention', label:'Convention'},
+  {key:'formation', label:'Formation'},
+  {key:'facture', label:'Facture'},
+];
+const MOIS_LONG = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+// "2026-06" -> "Juin 2026"
+function formatMois(mois) {
+  if(!mois || mois.length < 7) return mois || '';
+  const [y, m] = mois.split('-');
+  return (MOIS_LONG[(+m)-1] || m) + ' ' + y;
+}
+
+// Modale d'entrée mensuelle (ajout / édition) — réutilise Modal
+function ParcoursEntryModal({open, onClose, entry, onSave}) {
+  const [form, setForm] = React.useState({mois:'', note:'', fait:false});
+  const addToast = useToast();
+  React.useEffect(() => {
+    if(open) {
+      if(entry) setForm({mois:entry.mois||todayStr().substring(0,7), note:entry.note||'', fait:!!entry.fait});
+      else setForm({mois:todayStr().substring(0,7), note:'', fait:false});
+    }
+  }, [open, entry]);
+  const handleSave = () => {
+    if(!form.mois) { addToast('Mois requis','error'); return; }
+    onSave({...(entry?{id:entry.id}:{}), mois:form.mois, note:(form.note||'').trim(), fait:form.fait});
+  };
+  return (
+    <Modal open={open} onClose={onClose} title={entry ? "Modifier l'entrée" : "Nouvelle entrée mensuelle"} size="sm">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Mois</label>
+          <input type="month" className={inputCls} value={form.mois} onChange={e=>setForm(f=>({...f, mois:e.target.value}))}/>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Note</label>
+          <textarea className={textareaCls} rows={3} value={form.note} onChange={e=>setForm(f=>({...f, note:e.target.value}))} placeholder="Où en est-on ce mois-ci ?"/>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-gray-600">
+          <input type="checkbox" checked={form.fait} onChange={e=>setForm(f=>({...f, fait:e.target.checked}))} className="rounded border-gray-300"/>
+          Marqué comme « fait »
+        </label>
+        <div className="flex gap-2 justify-end">
+          <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+          <Btn variant="primary" onClick={handleSave}>{entry ? 'Enregistrer' : 'Ajouter'}</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Carte TYPE A — Formation OPCO (checklist 4 étapes)
+function ParcoursFormationCard({parcours, clientLabel, onToggleStep, onArchive, onDelete}) {
+  const etapes = parcours.etapes || {};
+  const done = PARCOURS_STEPS.filter(s => etapes[s.key]).length;
+  const next = PARCOURS_STEPS.find(s => !etapes[s.key]);
+  const isDone = !next;
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+      <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+        <div>
+          <div className="text-base font-semibold text-gray-800">{parcours.titre}</div>
+          <div className="text-xs text-gray-400">{clientLabel} · Formation OPCO</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${isDone?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}`}>{done}/4</span>
+          <button onClick={onArchive} className="text-gray-300 hover:text-indigo-500 text-sm px-1" title="Archiver">📥</button>
+          <button onClick={onDelete} className="text-gray-300 hover:text-red-500 text-base px-1" title="Supprimer">&times;</button>
+        </div>
+      </div>
+
+      <div className={`text-xs font-medium mb-4 px-3 py-2 rounded-lg ${isDone?'bg-green-50 text-green-700':'bg-blue-50 text-blue-700'}`}>
+        {isDone ? 'Terminé ✓' : `Prochaine étape : ${next.label}`}
+      </div>
+
+      <div className="flex items-center gap-1">
+        {PARCOURS_STEPS.map((s, i) => {
+          const checked = !!etapes[s.key];
+          const isNext = next && next.key===s.key;
+          return (
+            <React.Fragment key={s.key}>
+              <button onClick={()=>onToggleStep(s.key)} className="flex flex-col items-center gap-1 flex-1 min-w-[60px] group">
+                <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-colors ${checked ? 'bg-green-500 border-green-500 text-white' : isNext ? 'border-blue-400 text-blue-500 ring-2 ring-blue-100' : 'border-gray-300 text-gray-300 group-hover:border-gray-400'}`}>
+                  {checked ? '✓' : i+1}
+                </span>
+                <span className={`text-xs text-center ${checked?'text-green-700 font-medium':isNext?'text-blue-700 font-medium':'text-gray-400'}`}>{s.label}</span>
+              </button>
+              {i < PARCOURS_STEPS.length-1 && <span className={`h-0.5 flex-1 min-w-[8px] ${checked?'bg-green-300':'bg-gray-200'}`}/>}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Carte TYPE B — Accompagnement mensuel (journal)
+function ParcoursAccompagnementCard({parcours, clientLabel, onAddEntry, onEditEntry, onToggleEntry, onDeleteEntry, onArchive, onDelete}) {
+  const entrees = [...(parcours.entrees||[])].sort((a,b)=>(b.mois||'').localeCompare(a.mois||''));
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+      <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+        <div>
+          <div className="text-base font-semibold text-gray-800">{parcours.titre}</div>
+          <div className="text-xs text-gray-400">{clientLabel} · Accompagnement mensuel · {entrees.length} entrée{entrees.length>1?'s':''}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Btn variant="outline" size="sm" onClick={onAddEntry}>+ Ce mois</Btn>
+          <button onClick={onArchive} className="text-gray-300 hover:text-indigo-500 text-sm px-1" title="Archiver">📥</button>
+          <button onClick={onDelete} className="text-gray-300 hover:text-red-500 text-base px-1" title="Supprimer">&times;</button>
+        </div>
+      </div>
+
+      {entrees.length===0 ? (
+        <div className="text-center text-xs text-gray-300 py-4">Aucune entrée — clique sur « + Ce mois »</div>
+      ) : (
+        <div className="space-y-2">
+          {entrees.map(e => (
+            <div key={e.id} className={`border-l-4 pl-3 py-2 rounded-r-lg ${e.fait?'border-green-400 bg-green-50':'border-amber-400 bg-amber-50'}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1">
+                  <div className="text-xs font-semibold text-gray-700">{formatMois(e.mois)}</div>
+                  <div className="text-sm text-gray-600 whitespace-pre-wrap">{e.note ? e.note : <span className="text-gray-300">(sans note)</span>}</div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={()=>onToggleEntry(e.id)} className={`text-xs font-medium px-2 py-0.5 rounded-full ${e.fait?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}`}>
+                    {e.fait ? '✓ Fait' : '⏳ En cours'}
+                  </button>
+                  <button onClick={()=>onEditEntry(e)} className="text-gray-300 hover:text-blue-500 text-xs px-1" title="Éditer">✏</button>
+                  <button onClick={()=>onDeleteEntry(e.id)} className="text-gray-300 hover:text-red-500 text-base px-1" title="Supprimer">&times;</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ParcoursModule({data, setData}) {
+  const addToast = useToast();
+  const [newOpen, setNewOpen] = React.useState(false);
+  const [newForm, setNewForm] = React.useState({clientId:'', type:'formation', titre:''});
+  const [entryModal, setEntryModal] = React.useState(null); // {parcoursId, entry}
+  const [confirmDel, setConfirmDel] = React.useState(null); // parcours id
+  const [showArchived, setShowArchived] = React.useState(false);
+
+  const parcours = data.parcours || [];
+  const visible = parcours.filter(p => showArchived ? p.statut==='archivé' : p.statut!=='archivé');
+
+  const clientLabel = (clientId) => {
+    const c = (data.clients||[]).find(x => x.id===clientId);
+    if(!c) return '— Client inconnu —';
+    return c.nom ? `${c.entreprise} (${c.nom})` : c.entreprise;
+  };
+
+  const updateParcours = (id, fn) => setData(d => ({...d, parcours:(d.parcours||[]).map(p=>p.id===id?fn(p):p)}));
+  const removeParcours = (id) => { setData(d => ({...d, parcours:(d.parcours||[]).filter(p=>p.id!==id)})); addToast('Parcours supprimé','success'); };
+  const archiveParcours = (id) => updateParcours(id, p => ({...p, statut:p.statut==='archivé'?'actif':'archivé'}));
+
+  const toggleStep = (id, key) => updateParcours(id, p => ({...p, etapes:{...(p.etapes||{}), [key]:!(p.etapes||{})[key]}}));
+
+  const saveEntry = (parcoursId, entry) => {
+    updateParcours(parcoursId, p => {
+      const entrees = p.entrees || [];
+      if(entry.id) return {...p, entrees:entrees.map(e=>e.id===entry.id?entry:e)};
+      return {...p, entrees:[...entrees, {...entry, id:genId()}]};
+    });
+    setEntryModal(null);
+  };
+  const toggleEntry = (parcoursId, entryId) => updateParcours(parcoursId, p => ({...p, entrees:(p.entrees||[]).map(e=>e.id===entryId?{...e, fait:!e.fait}:e)}));
+  const deleteEntry = (parcoursId, entryId) => updateParcours(parcoursId, p => ({...p, entrees:(p.entrees||[]).filter(e=>e.id!==entryId)}));
+
+  const handleCreate = () => {
+    if(!newForm.clientId) { addToast('Choisis un client','error'); return; }
+    if(!newForm.titre.trim()) { addToast('Titre requis','error'); return; }
+    const base = {id:genId(), clientId:newForm.clientId, type:newForm.type, titre:newForm.titre.trim(), statut:'actif', dateCreation:todayStr()};
+    const np = newForm.type==='formation'
+      ? {...base, etapes:{devis:false, convention:false, formation:false, facture:false}}
+      : {...base, entrees:[]};
+    setData(d => ({...d, parcours:[...(d.parcours||[]), np]}));
+    setNewOpen(false);
+    setNewForm({clientId:'', type:'formation', titre:''});
+    addToast('Parcours créé','success');
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end justify-between flex-wrap gap-2">
+        <h1 className="text-2xl font-bold text-gray-800">🧭 Parcours</h1>
+        <div className="flex items-center gap-2">
+          <button onClick={()=>setShowArchived(v=>!v)} className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${showArchived?'bg-indigo-100 text-indigo-700':'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+            {showArchived ? '← Parcours actifs' : 'Voir archivés'}
+          </button>
+          <Btn variant="primary" onClick={()=>setNewOpen(true)}>+ Nouveau parcours</Btn>
+        </div>
+      </div>
+
+      {visible.length===0 ? (
+        <EmptyState message={showArchived ? 'Aucun parcours archivé' : 'Aucun parcours actif'} icon="🧭"/>
+      ) : (
+        <div className="space-y-4">
+          {visible.map(p => p.type==='formation' ? (
+            <ParcoursFormationCard key={p.id} parcours={p} clientLabel={clientLabel(p.clientId)}
+              onToggleStep={(key)=>toggleStep(p.id, key)}
+              onArchive={()=>archiveParcours(p.id)}
+              onDelete={()=>setConfirmDel(p.id)}/>
+          ) : (
+            <ParcoursAccompagnementCard key={p.id} parcours={p} clientLabel={clientLabel(p.clientId)}
+              onAddEntry={()=>setEntryModal({parcoursId:p.id, entry:null})}
+              onEditEntry={(e)=>setEntryModal({parcoursId:p.id, entry:e})}
+              onToggleEntry={(eid)=>toggleEntry(p.id, eid)}
+              onDeleteEntry={(eid)=>deleteEntry(p.id, eid)}
+              onArchive={()=>archiveParcours(p.id)}
+              onDelete={()=>setConfirmDel(p.id)}/>
+          ))}
+        </div>
+      )}
+
+      {/* Modale création */}
+      <Modal open={newOpen} onClose={()=>setNewOpen(false)} title="Nouveau parcours" size="md">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Client *</label>
+            <select className={selectCls} value={newForm.clientId} onChange={e=>setNewForm(f=>({...f, clientId:e.target.value}))}>
+              <option value="">— Choisir un client —</option>
+              {(data.clients||[]).map(c => <option key={c.id} value={c.id}>{c.nom ? `${c.entreprise} (${c.nom})` : c.entreprise}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Type de parcours *</label>
+            <select className={selectCls} value={newForm.type} onChange={e=>setNewForm(f=>({...f, type:e.target.value}))}>
+              <option value="formation">Formation OPCO (checklist)</option>
+              <option value="accompagnement">Accompagnement mensuel (journal)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Titre *</label>
+            <input className={inputCls} value={newForm.titre} onChange={e=>setNewForm(f=>({...f, titre:e.target.value}))} placeholder="Ex : Formation Excel, Accompagnement mensuel…"/>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" onClick={()=>setNewOpen(false)}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleCreate}>Créer</Btn>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modale entrée d'accompagnement */}
+      <ParcoursEntryModal
+        open={!!entryModal}
+        onClose={()=>setEntryModal(null)}
+        entry={entryModal?.entry}
+        onSave={(entry)=>saveEntry(entryModal.parcoursId, entry)}
+      />
+
+      <ConfirmModal open={!!confirmDel} onClose={()=>setConfirmDel(null)} onConfirm={()=>{removeParcours(confirmDel);setConfirmDel(null);}} title="Supprimer le parcours" message="Confirmer la suppression de ce parcours ?"/>
+    </div>
+  );
+}
+
+// ============================================================
 // BANK & EXPENSES MODULE
 // ============================================================
 function ExpenseModal({open, onClose, expense, onSave, onDelete}) {
@@ -4240,6 +4506,7 @@ const NAV_ITEMS = [
     {id:'analytics', label:'Analytics', icon:'📈'},
   ]},
   {id:'tasks', label:'Tâches', icon:'✅'},
+  {id:'parcours', label:'Parcours', icon:'🧭'},
   {id:'resources', label:'Drive & Liens', icon:'🔗'},
 ];
 
@@ -4840,6 +5107,7 @@ function App() {
       case 'contracts': return wrap(<ContractsModule data={data} setData={setData} deepLink={contractDeepLink} clearDeepLink={()=>setContractDeepLink(null)}/>);
       case 'crm': return wrap(<CRMModule data={data} setData={setData} onNavigate={onNavigate}/>);
       case 'tasks': return wrap(<TasksModule data={data} setData={setData}/>);
+      case 'parcours': return wrap(<ParcoursModule data={data} setData={setData}/>);
       case 'bank': return wrap(<BankModule data={data} setData={setData} deepLink={bankDeepLink} clearDeepLink={()=>setBankDeepLink(null)}/>);
       case 'ledger': return wrap(<LedgerModule data={data} onNavigate={onNavigate}/>);
       case 'tresorerie': return wrap(<TresorerieModule data={data}/>);
