@@ -370,6 +370,35 @@ async function syncInvoicesToTable(invoices) {
 }
 
 // ------------------------------------------------------------------
+// parcours  (Priorité 7c)
+// Stocke les colonnes indexées + objet complet en JSONB pour round-trip sans perte
+// ------------------------------------------------------------------
+async function syncParcoursToTable(parcours) {
+  if(!Array.isArray(parcours)) return;
+  try {
+    const currentIds = parcours.map(p => p.id);
+    await _deleteOrphans('parcours', currentIds);
+    if(parcours.length === 0) { addSyncLog('ENTITY_OK', 'parcours ×0'); return; }
+    const rows = parcours.map(p => ({
+      id:            p.id,
+      client_id:     p.clientId     || null,
+      type:          p.type         || '',
+      titre:         p.titre        || '',
+      statut:        p.statut       || 'actif',
+      date_creation: p.dateCreation || null,
+      data:          p,
+    }));
+    const { error } = await sb.from('parcours').upsert(rows);
+    if(error) {
+      console.warn('[ENTITIES] parcours:', error.message);
+      addSyncLog('ENTITY_ERR', `parcours: ${error.code} ${error.message}`);
+    } else {
+      addSyncLog('ENTITY_OK', `parcours ×${rows.length}`);
+    }
+  } catch(e) { console.warn('[ENTITIES] parcours exception:', e.message); }
+}
+
+// ------------------------------------------------------------------
 // Phase B — Lecture depuis les tables entité au montage
 // Retourne l'objet data complet (même structure que app_data.data)
 // Retourne null si les tables sont vides ou inaccessibles → fallback app_data
@@ -388,6 +417,7 @@ async function loadFromEntityTables() {
       { data: invoiceRows,  error: e9 },
       { data: configRow,    error: e10 },
       { data: actionRows },
+      { data: parcoursRows },
     ] = await Promise.all([
       sb.from('clients').select('*'),
       sb.from('contracts').select('*'),
@@ -400,6 +430,7 @@ async function loadFromEntityTables() {
       sb.from('invoices').select('*'),
       sb.from('app_config').select('*').eq('id', 1).single(),
       sb.from('crm_actions').select('*'),
+      sb.from('parcours').select('*'),
     ]);
 
     // Tables critiques inaccessibles → fallback app_data
@@ -549,6 +580,18 @@ async function loadFromEntityTables() {
       }
     );
 
+    // parcours : priorité au JSONB data pour round-trip sans perte
+    const parcours = (parcoursRows || []).map(p =>
+      p.data ? { ...p.data, id: p.id } : {
+        id:           p.id,
+        clientId:     p.client_id     || null,
+        type:         p.type          || '',
+        titre:        p.titre         || '',
+        statut:       p.statut        || 'actif',
+        dateCreation: p.date_creation || null,
+      }
+    );
+
     // app_config → config + bank.initialBalance
     const cfg = configRow || {};
     const config = {
@@ -573,6 +616,7 @@ async function loadFromEntityTables() {
       expenses,
       quotes,
       invoices,
+      parcours,
       bank: {
         initialBalance: cfg.initial_balance || 0,
         transactions,
