@@ -312,10 +312,14 @@ function EmptyState({message, icon='📭'}) {
   );
 }
 
-function SectionHeader({title, action}) {
+function SectionHeader({title, action, icon, color='blue'}) {
+  const [accent, soft] = TINT[color] || TINT.blue;
   return (
     <div className="flex items-center justify-between mb-4">
-      <h3 className="text-base font-semibold text-gray-800">{title}</h3>
+      <div className="flex items-center gap-2.5">
+        {icon && <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg" style={{color:accent, background:soft}}><Icon name={icon} size={16}/></span>}
+        <h3 className="text-[14px] font-medium" style={{color:'var(--text-strong)'}}>{title}</h3>
+      </div>
       {action}
     </div>
   );
@@ -3249,29 +3253,29 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800">Banque & Frais</h1>
+      <h1 className="text-[21px] font-medium" style={{color:'var(--text-strong)'}}>Banque & Frais</h1>
 
       {/* Period filter */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-4 space-y-3">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-gray-500">Période :</span>
           <PeriodeFilter periodeId={periodeId} setPeriodeId={setPeriodeId} dateDebut={dateDebut} setDateDebut={setDateDebut} dateFin={dateFin} setDateFin={setDateFin}/>
         </div>
         <div className="flex gap-3 flex-wrap">
-          <KPICard label="Dépenses perso" value={fmt(expenseKPIs.total)} color="red" icon="💸"/>
-          <KPICard label="Micka" value={fmt(expenseKPIs.byMicka)} color="indigo" icon="👤"/>
-          <KPICard label="César" value={fmt(expenseKPIs.byCesar)} color="green" icon="👤"/>
+          <KPICard label="Dépenses perso" value={fmt(expenseKPIs.total)} color="red" icon="banknote"/>
+          <KPICard label="Micka" value={fmt(expenseKPIs.byMicka)} color="indigo" icon="user"/>
+          <KPICard label="César" value={fmt(expenseKPIs.byCesar)} color="green" icon="user"/>
         </div>
       </div>
 
       {/* Solde */}
-      <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-2xl p-5">
-        <div className="text-xs font-medium text-indigo-600 mb-1">Solde carte</div>
-        <div className="text-3xl font-bold text-indigo-800 mb-2">{fmt(solde)}</div>
+      <div className="bg-[var(--brand-soft)] border border-[var(--border)] rounded-[var(--radius)] p-5">
+        <div className="text-xs font-medium mb-1" style={{color:'var(--brand)'}}>Solde carte</div>
+        <div className="text-[28px] font-medium mb-2" style={{color:'var(--brand-strong)'}}><Money value={fmt(solde)}/></div>
         <div className="flex items-center gap-3">
           {!editBalance ? (
-            <><span className="text-xs text-indigo-500">Solde initial: {fmt(data.bank.initialBalance)}</span>
-            <button onClick={()=>{setTempBalance(data.bank.initialBalance);setEditBalance(true);}} className="text-xs text-indigo-400 hover:text-indigo-600 underline">Modifier</button></>
+            <><span className="text-xs" style={{color:'var(--brand)'}}>Solde initial: {fmt(data.bank.initialBalance)}</span>
+            <button onClick={()=>{setTempBalance(data.bank.initialBalance);setEditBalance(true);}} className="text-xs underline" style={{color:'var(--brand)'}}>Modifier</button></>
           ) : (
             <div className="flex items-center gap-2">
               <input className="border border-indigo-300 rounded px-2 py-1 text-sm w-32 bg-white" type="number" step="0.01" value={tempBalance} onChange={e=>setTempBalance(e.target.value)}/>
@@ -3283,8 +3287,8 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
       </div>
 
       {/* Avances perso */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-        <SectionHeader title="Avances perso (Dépenses)" action={<Btn size="sm" variant="primary" onClick={()=>{setSelectedExpense(null);setExpenseModal(true);}}>+ Ajouter</Btn>}/>
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5">
+        <SectionHeader icon="banknote" color="red" title="Avances perso (Dépenses)" action={<Btn size="sm" variant="primary" onClick={()=>{setSelectedExpense(null);setExpenseModal(true);}}>+ Ajouter</Btn>}/>
         <div className="flex gap-3 mb-4 flex-wrap">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
@@ -3310,12 +3314,12 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
                 {sortedExpenses.map(e=>(
                   <tr key={e.id} className="border-t border-gray-50 hover:bg-gray-50">
                     <td className="px-3 py-2 font-medium">{e.titre}</td>
-                    <td className="px-3 py-2 text-red-600 font-semibold">{fmt(e.montant)}</td>
+                    <td className="px-3 py-2 font-semibold" style={{color:'#E0654F'}}>{fmt(e.montant)}</td>
                     <td className="px-3 py-2 text-gray-500">{e.categorie}</td>
                     <td className="px-3 py-2"><StatusBadge status={e.payePar}/></td>
                     <td className="px-3 py-2 text-gray-500 text-xs">{formatDate(e.date)}</td>
                     <td className="px-3 py-2 text-xs">{e.refacturable?'✓':''}</td>
-                    <td className="px-3 py-2"><button onClick={()=>{setSelectedExpense(e);setExpenseModal(true);}} className="text-blue-400 hover:text-blue-600 text-xs">Éditer</button></td>
+                    <td className="px-3 py-2"><button onClick={()=>{setSelectedExpense(e);setExpenseModal(true);}} className="text-[var(--brand)] text-xs">Éditer</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -3330,7 +3334,7 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={e.payePar}/>
-                  <span className="text-sm font-bold text-red-600">{fmt(e.montant)}</span>
+                  <span className="text-sm font-bold" style={{color:'#E0654F'}}>{fmt(e.montant)}</span>
                 </div>
               </div>
             ))}
@@ -3339,8 +3343,8 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
       </div>
 
       {/* Relevé carte */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-        <SectionHeader title="Relevé carte (Transactions)" action={<Btn size="sm" variant="primary" onClick={()=>{setSelectedTx(null);setTxModal(true);}}>+ Ajouter</Btn>}/>
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5">
+        <SectionHeader icon="credit-card" color="blue" title="Relevé carte (Transactions)" action={<Btn size="sm" variant="primary" onClick={()=>{setSelectedTx(null);setTxModal(true);}}>+ Ajouter</Btn>}/>
         {sortedTx.length===0 ? <EmptyState message="Aucune transaction" icon="🏦"/> : (<>
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
@@ -3351,12 +3355,12 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
                 {sortedTx.map(t=>(
                   <tr key={t.id} className="border-t border-gray-50 hover:bg-gray-50">
                     <td className="px-3 py-2 font-medium">{t.label}</td>
-                    <td className={`px-3 py-2 font-semibold ${Number(t.montant)>=0?'text-green-600':'text-red-600'}`}>{fmt(Math.abs(t.montant))}</td>
+                    <td className="px-3 py-2 font-semibold" style={{color: Number(t.montant)>=0?'var(--money)':'#E0654F'}}>{fmt(Math.abs(t.montant))}</td>
                     <td className="px-3 py-2 text-gray-500">{t.type}</td>
                     <td className="px-3 py-2"><StatusBadge status={t.imputéÀ||'Commun'}/></td>
                     <td className="px-3 py-2 text-gray-500 text-xs">{formatDate(t.date)}</td>
                     <td className="px-3 py-2"><StatusBadge status={t.statut}/></td>
-                    <td className="px-3 py-2"><button onClick={()=>{setSelectedTx(t);setTxModal(true);}} className="text-blue-400 hover:text-blue-600 text-xs">Éditer</button></td>
+                    <td className="px-3 py-2"><button onClick={()=>{setSelectedTx(t);setTxModal(true);}} className="text-[var(--brand)] text-xs">Éditer</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -3371,7 +3375,7 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={t.statut}/>
-                  <span className={`text-sm font-bold ${Number(t.montant)>=0?'text-green-600':'text-red-600'}`}>{fmt(Math.abs(t.montant))}</span>
+                  <span className="text-sm font-bold" style={{color: Number(t.montant)>=0?'var(--money)':'#E0654F'}}>{fmt(Math.abs(t.montant))}</span>
                 </div>
               </div>
             ))}
@@ -3380,8 +3384,8 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
       </div>
 
       {/* Abonnements */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-        <SectionHeader title="Abonnements" action={
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5">
+        <SectionHeader icon="refresh-cw" color="blue" title="Abonnements" action={
           <div className="flex gap-2">
             <Btn size="sm" variant="success" onClick={generateSubscriptionTx}>Générer ce mois</Btn>
             <Btn size="sm" variant="primary" onClick={()=>{setSelectedSub(null);setSubModal(true);}}>+ Ajouter</Btn>
@@ -3399,11 +3403,11 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold text-red-600">{fmt(s.amount)}/mois</span>
+                  <span className="text-sm font-semibold" style={{color:'#E0654F'}}>{fmt(s.amount)}/mois</span>
                   <button onClick={()=>toggleSubActive(s.id)} className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.active?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500'}`}>
                     {s.active?'Actif':'Inactif'}
                   </button>
-                  <button onClick={()=>{setSelectedSub(s);setSubModal(true);}} className="text-blue-400 hover:text-blue-600 text-xs">Éditer</button>
+                  <button onClick={()=>{setSelectedSub(s);setSubModal(true);}} className="text-[var(--brand)] text-xs">Éditer</button>
                 </div>
               </div>
             ))}
