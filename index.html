@@ -220,6 +220,8 @@ const ICONS = {
   'mail': '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
   'bell': '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   'flag': '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
+  'download': '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  'sliders': '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>',
 };
 
 const TINT = {
@@ -1457,8 +1459,8 @@ function QuickClientCreate({onCreated, clients}) {
   };
 
   return (
-    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mt-2 space-y-3">
-      <div className="text-xs font-semibold text-blue-700 mb-2">Créer un nouveau client</div>
+    <div className="bg-[var(--brand-soft)] border border-[var(--border)] rounded-xl p-4 mt-2 space-y-3">
+      <div className="text-xs font-semibold text-[var(--brand)] mb-2">Créer un nouveau client</div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Entreprise *</label>
@@ -1478,7 +1480,7 @@ function QuickClientCreate({onCreated, clients}) {
       </div>
       {duplicate && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-          <div className="text-xs text-amber-700 font-medium mb-2">⚠️ Client existant: {duplicate.entreprise} ({duplicate.nom})</div>
+          <div className="flex items-center gap-1.5 text-xs text-amber-700 font-medium mb-2"><Icon name="alert-triangle" size={14}/> Client existant: {duplicate.entreprise} ({duplicate.nom})</div>
           <div className="flex gap-2">
             <Btn size="sm" variant="outline" onClick={() => { onCreated(duplicate, true); setDuplicate(null); }}>Utiliser l'existant</Btn>
             <Btn size="sm" variant="secondary" onClick={() => handleCreate(true)}>Créer quand même</Btn>
@@ -1674,7 +1676,7 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
           </div>
           {paidTotal > montantNum && montantNum > 0 && (
             <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <span className="text-red-500 text-lg leading-none mt-0.5">⚠️</span>
+              <span className="leading-none mt-0.5" style={{color:'var(--danger)'}}><Icon name="alert-triangle" size={18}/></span>
               <div>
                 <div className="text-sm font-semibold text-red-700">Sur-encaissement détecté</div>
                 <div className="text-xs text-red-600 mt-0.5">Les paiements ({fmt(paidTotal)}) dépassent le montant du contrat ({fmt(montantNum)}) de <span className="font-bold">+{fmt(paidTotal - montantNum)}</span>. Vérifiez les saisies.</div>
@@ -1706,7 +1708,7 @@ function ContractModal({open, onClose, contract, clients, onSave, onDelete, defa
               {sortedPayments.map(p => (
                 <div key={p.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
                   <div>
-                    <span className="text-sm font-semibold text-green-700">{fmt(p.montant)}</span>
+                    <span className="text-sm font-semibold" style={{color:'var(--money)'}}>{fmt(p.montant)}</span>
                     <span className="text-xs text-gray-500 ml-2">{formatDate(p.date)}</span>
                     {p.note && <span className="text-xs text-gray-500 ml-2">– {p.note}</span>}
                   </div>
@@ -1883,9 +1885,9 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Contrats</h1>
+        <h1 className="text-[21px] font-medium" style={{color:'var(--text-strong)'}}>Contrats</h1>
         <div className="flex gap-2">
-          <Btn variant="outline" size="sm" onClick={handleExportCSV}>⬇️ CSV</Btn>
+          <Btn variant="outline" size="sm" onClick={handleExportCSV}><Icon name="download" size={14}/> CSV</Btn>
           <Btn variant="primary" onClick={openNew}>+ Nouveau contrat</Btn>
         </div>
       </div>
@@ -1902,12 +1904,12 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
         const hasFilters = activeFilters.length > 0 || !!search;
         const resetAll = () => { setStatusFilter('Tous');setPaymentStatusFilter('Tous');setAssigneeFilter('Tous');setPaymentTypeFilter('Tous');setSearch('');setPeriodeId('tout');setDateDebut('');setDateFin(''); };
         return (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-4 space-y-3">
             {/* Barre de contrôle toujours visible */}
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={()=>setFiltersOpen(v=>!v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${filtersOpen ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                🔧 Filtres {activeFilters.length>0 && <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${filtersOpen?'bg-white text-blue-600':'bg-blue-600 text-white'}`}>{activeFilters.length}</span>}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${filtersOpen ? 'bg-[var(--brand-strong)] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                <Icon name="sliders" size={14}/> Filtres {activeFilters.length>0 && <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${filtersOpen?'bg-white text-[var(--brand-strong)]':'bg-[var(--brand)] text-white'}`}>{activeFilters.length}</span>}
                 <span className="ml-1">{filtersOpen?'▲':'▼'}</span>
               </button>
               <input className={`${inputCls} w-56`} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher client, prestation..."/>
@@ -1916,9 +1918,9 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
               )}
               {/* Chips des filtres actifs (panneau fermé) */}
               {!filtersOpen && activeFilters.map((f,i) => (
-                <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
+                <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-[var(--brand-soft)] text-[var(--brand)] rounded-full text-xs font-medium">
                   {f.label}
-                  <button onClick={f.reset} className="ml-0.5 text-blue-400 hover:text-blue-700 font-bold leading-none">×</button>
+                  <button onClick={f.reset} className="ml-0.5 text-[var(--brand)] font-bold leading-none">×</button>
                 </span>
               ))}
             </div>
@@ -1934,7 +1936,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                   <div className="flex gap-1 flex-wrap">
                     {['Tous', ...CONTRACT_STATUSES].map(s => (
                       <button key={s} onClick={()=>setStatusFilter(s)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${statusFilter===s ? 'bg-[var(--brand-strong)] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
                     ))}
                   </div>
                 </div>
@@ -1943,7 +1945,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                   <div className="flex gap-1 flex-wrap">
                     {['Tous','Non payé','Partiel','Payé'].map(s => (
                       <button key={s} onClick={()=>setPaymentStatusFilter(s)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${paymentStatusFilter===s ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${paymentStatusFilter===s ? 'bg-[var(--brand-strong)] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
                     ))}
                   </div>
                 </div>
@@ -1952,7 +1954,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                   <div className="flex gap-1 flex-wrap">
                     {['Tous',...ASSIGNEES_AVEC_DEUX].map(s => (
                       <button key={s} onClick={()=>setAssigneeFilter(s)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${assigneeFilter===s ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${assigneeFilter===s ? 'bg-[var(--brand-strong)] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
                     ))}
                   </div>
                 </div>
@@ -1961,7 +1963,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                   <div className="flex gap-1 flex-wrap">
                     {['Tous',...PAYMENT_TYPES].map(s => (
                       <button key={s} onClick={()=>setPaymentTypeFilter(s)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${paymentTypeFilter===s ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${paymentTypeFilter===s ? 'bg-[var(--brand-strong)] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{s}</button>
                     ))}
                   </div>
                 </div>
@@ -1973,15 +1975,15 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
 
       {/* Totals */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <KPICard label="Total signé" value={fmt(totals.signe)} color="blue"/>
-        <KPICard label="Encaissé" value={fmt(totals.encaisse)} color="green"/>
-        <KPICard label="Reste" value={fmt(totals.reste)} color="amber"/>
+        <KPICard label="Total signé" value={fmt(totals.signe)} color="blue" icon="file-text"/>
+        <KPICard label="Encaissé" value={fmt(totals.encaisse)} color="green" icon="wallet"/>
+        <KPICard label="Reste" value={fmt(totals.reste)} color="amber" icon="hourglass"/>
       </div>
 
       {/* Table / Cards */}
       {filtered.length === 0 ? <EmptyState message="Aucun contrat trouvé" icon="📄"/> : (<>
         {/* Desktop Table */}
-        <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="hidden md:block bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
@@ -2013,7 +2015,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                     <td className="px-4 py-3 text-xs text-gray-500">{c.dateSignature ? formatDate(c.dateSignature) : '—'}</td>
                     <td className="px-4 py-3 text-xs text-gray-500 hidden xl:table-cell">{c.dateDebut ? formatDate(c.dateDebut) : '—'}</td>
                     <td className="px-4 py-3 text-xs text-gray-500 hidden xl:table-cell">{c.dateFin ? formatDate(c.dateFin) : '—'}</td>
-                    <td className="px-4 py-3"><button className="text-blue-500 hover:text-blue-700 text-xs font-medium">Ouvrir →</button></td>
+                    <td className="px-4 py-3"><button className="text-[var(--brand)] text-xs font-medium">Ouvrir →</button></td>
                   </tr>
                 );
               })}
@@ -2027,7 +2029,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
             const ps = calcPaymentStatus(c.montant, c.payments);
             const isOPCO = c.typePaiement==='OPCO'||c.typePaiement==='Virement + OPCO';
             return (
-              <div key={c.id} onClick={()=>openContract(c)} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 cursor-pointer">
+              <div key={c.id} onClick={()=>openContract(c)} className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-4 cursor-pointer">
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <div className="font-semibold text-gray-800">{c.client}</div>
@@ -2035,7 +2037,7 @@ function ContractsModule({data, setData, deepLink, clearDeepLink}) {
                     {c.dateSignature && <div className="text-xs text-gray-400 mt-0.5">Signé le {formatDate(c.dateSignature)}</div>}
                     {(c.dateDebut||c.dateFin) && <div className="text-xs text-gray-400 mt-0.5">{c.dateDebut?formatDate(c.dateDebut):''}{c.dateDebut&&c.dateFin?' → ':''}{c.dateFin?formatDate(c.dateFin):''}</div>}
                   </div>
-                  <div className="text-base font-bold text-blue-700">{fmt(c.montant)}</div>
+                  <div className="text-base font-semibold" style={{color:'var(--text-strong)'}}>{fmt(c.montant)}</div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   <StatusBadge status={c.assignedTo}/>
