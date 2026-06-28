@@ -4122,17 +4122,37 @@ function ChartCanvas({type, data, options}) {
     const canvas = canvasRef.current;
     if(!canvas || !window.Chart) return;
     if(chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+    // Style de base partagé (purement visuel) : grille légère, axes discrets sans bordure,
+    // ticks gris doux, tooltip sobre formaté en €, barres arrondies et un peu plus fines.
+    // Deep-merge avec les options de l'appelant (legend / indexAxis / maintainAspectRatio préservés).
+    const o  = options || {};
+    const op = o.plugins || {};
+    const os = o.scales  || {};
+    const GRID = '#EEF0F2', TICK = '#9CA3AF';
     chartRef.current = new window.Chart(canvas, {
       type,
       data,
       options: {
         responsive: true,
         maintainAspectRatio: true,
+        ...o,
+        layout: { padding: {top:8, right:14, bottom:4, left:6}, ...(o.layout||{}) },
+        datasets: { ...(o.datasets||{}), bar: { barPercentage:0.7, categoryPercentage:0.78, borderRadius:6, borderSkipped:false, ...((o.datasets||{}).bar||{}) } },
         plugins: {
-          legend: {display: true, labels:{boxWidth:12,font:{size:11}}},
-          tooltip: {callbacks:{label: ctx => ' ' + fmt(ctx.raw || 0)}}
+          ...op,
+          legend: { display:true, labels:{boxWidth:12, font:{size:11}, color:'#6B7280'}, ...(op.legend||{}) },
+          tooltip: {
+            backgroundColor:'#1F2937', padding:10, cornerRadius:8, displayColors:false,
+            titleColor:'#F9FAFB', bodyColor:'#F9FAFB',
+            ...(op.tooltip||{}),
+            callbacks: { label: ctx => ' ' + fmt(ctx.raw || 0), ...((op.tooltip||{}).callbacks||{}) },
+          },
         },
-        ...( options || {})
+        scales: {
+          ...os,
+          x: { grid:{color:GRID}, border:{display:false}, ticks:{color:TICK, font:{size:11}}, ...(os.x||{}) },
+          y: { grid:{color:GRID}, border:{display:false}, ticks:{color:TICK, font:{size:11}}, ...(os.y||{}) },
+        },
       }
     });
     return () => { if(chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
