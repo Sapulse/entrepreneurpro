@@ -843,8 +843,17 @@ function Dashboard({data, onNavigate, setData}) {
       map[y][m] += e.montant;
     });
     const allYears = [...years].sort();
+    // Totaux annuels + % d'évolution N vs N-1 (réutilise map, pas de recalcul).
+    // Garde-fou : base N-1 = 0 → delta null (affiché « — »), jamais de % aberrant.
+    const totals = allYears.map((y, i) => {
+      const total = (map[y] || []).reduce((s,v) => s+v, 0);
+      const prev = i > 0 ? (map[allYears[i-1]] || []).reduce((s,v) => s+v, 0) : null;
+      const delta = (prev && prev > 0) ? Math.round(((total - prev) / prev) * 100) : null;
+      return {year: y, total, delta};
+    });
     return {
       hasData: allYears.length > 0,
+      totals,
       data: {
         labels: MONTH_SHORT,
         datasets: allYears.map((y,i) => ({
@@ -958,7 +967,7 @@ function Dashboard({data, onNavigate, setData}) {
               </div>
               {caVide
                 ? <EmptyState message="Aucune donnée cette année" icon="bar-chart"/>
-                : <div className="h-64"><ChartCanvas type="bar" data={caChartData} options={{maintainAspectRatio:false}}/></div>}
+                : <div className="h-64"><ChartCanvas type="bar" data={caChartData} options={{maintainAspectRatio:false, plugins:{legend:{display:false}}}}/></div>}
             </ChartBlock>
             <ChartBlock title={`Évolution Micka / César (${caEvolution.year})`} icon="users">
               {duoVide
@@ -1145,7 +1154,24 @@ function Dashboard({data, onNavigate, setData}) {
           <ChartBlock title="CA mensuel par année" icon="bar-chart">
             {!caMultiYear.hasData
               ? <EmptyState message="Aucune donnée" icon="bar-chart"/>
-              : <div className="h-72"><ChartCanvas type="bar" data={caMultiYear.data} options={{maintainAspectRatio:false}}/></div>}
+              : (<>
+                  <div className="h-72"><ChartCanvas type="bar" data={caMultiYear.data} options={{maintainAspectRatio:false}}/></div>
+                  {/* Totaux annuels + % d'évolution N vs N-1 (vert hausse / corail baisse, « — » si pas de base) */}
+                  <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1.5 mt-4 pt-3 border-t border-gray-100 text-sm">
+                    {caMultiYear.totals.map((t, i) => (
+                      <span key={t.year} className="inline-flex items-baseline gap-1.5">
+                        {i > 0 && <span className="text-gray-300 mr-1.5">·</span>}
+                        <span className="font-semibold text-gray-700">{t.year}</span>
+                        <span className="text-gray-500">{fmt(t.total)}</span>
+                        {t.delta !== null && (
+                          <span className="text-xs font-semibold" style={{color: t.delta >= 0 ? 'var(--money)' : '#E0654F'}}>
+                            {t.delta >= 0 ? '+' : ''}{t.delta}%
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </>)}
           </ChartBlock>
         </DraggableWidget>
       );
