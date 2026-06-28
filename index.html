@@ -2796,6 +2796,7 @@ function TasksModule({data, setData}) {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedTask, setSelectedTask] = React.useState(null);
   const [confirmDelete, setConfirmDelete] = React.useState(null);
+  const [filtrePersonne, setFiltrePersonne] = React.useState('Tous'); // 'Tous' | 'Micka' | 'César'
 
   const statusOrder = ['À faire','En cours','Terminé'];
 
@@ -2823,6 +2824,23 @@ function TasksModule({data, setData}) {
 
   const colColors = {'À faire':'bg-slate-50 border-slate-200','En cours':'bg-blue-50 border-blue-200','Terminé':'bg-green-50 border-green-200'};
 
+  // Compteurs par personne — une tâche « Les deux » compte dans Micka ET César (voulu).
+  // assignedTo undefined → ne matche ni Micka ni César (n'apparaît qu'en « Tous »).
+  const counts = React.useMemo(() => {
+    const all = data.tasks || [];
+    return {
+      'Tous':  all.length,
+      'Micka': all.filter(t => t.assignedTo==='Micka' || t.assignedTo==='Les deux').length,
+      'César': all.filter(t => t.assignedTo==='César' || t.assignedTo==='Les deux').length,
+    };
+  }, [data.tasks]);
+  // Liste filtrée par personne, appliquée ensuite par statut dans chaque colonne.
+  const visibleTasks = React.useMemo(() => {
+    const all = data.tasks || [];
+    if(filtrePersonne === 'Tous') return all;
+    return all.filter(t => t.assignedTo===filtrePersonne || t.assignedTo==='Les deux');
+  }, [data.tasks, filtrePersonne]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between">
@@ -2830,9 +2848,20 @@ function TasksModule({data, setData}) {
         <Btn variant="primary" onClick={()=>{setSelectedTask(null);setModalOpen(true);}}>+ Nouvelle tâche</Btn>
       </div>
 
+      {/* Filtre par personne (« Les deux » compté dans Micka et César) */}
+      <div className="flex flex-wrap gap-2">
+        {['Tous','Micka','César'].map(p => (
+          <button key={p} onClick={()=>setFiltrePersonne(p)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${filtrePersonne===p ? 'text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+            style={filtrePersonne===p ? {background:'var(--brand)'} : undefined}>
+            {p} ({counts[p]})
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {statusOrder.map(status => {
-          const tasks = data.tasks.filter(t=>t.statut===status);
+          const tasks = visibleTasks.filter(t=>t.statut===status);
           return (
             <div key={status} className={`border rounded-2xl p-3 ${colColors[status]}`}>
               <div className="flex items-center justify-between mb-3 px-1">
