@@ -3390,6 +3390,11 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
     return {total, byMicka, byCesar};
   }, [sortedExpenses]);
 
+  // Dépenses mensuelles (récupéré de l'ancien écran Analytics) — branché sur sortedExpenses,
+  // donc suit les filtres période / catégorie / payeur déjà appliqués à l'écran.
+  const depMensuelles = React.useMemo(() => byMonth(sortedExpenses, e=>e.date, e=>Math.abs(Number(e.montant)||0)), [sortedExpenses]);
+  const depMensuellesChartData = {labels:depMensuelles.labels, datasets:[{label:'Dépenses', data:depMensuelles.values, backgroundColor:'#E0654F88', borderColor:'#E0654F', borderWidth:1}]};
+
   return (
     <div className="space-y-6">
       <h1 className="text-[21px] font-medium" style={{color:'var(--text-strong)'}}>Banque & Frais</h1>
@@ -3443,6 +3448,13 @@ function BankModule({data, setData, deepLink, clearDeepLink}) {
             </select>
           </div>
         </div>
+        {sortedExpenses.length > 0 && (
+          <div className="mb-4">
+            <ChartBlock title="Dépenses mensuelles" icon="calendar">
+              <div className="h-56"><ChartCanvas type="bar" data={depMensuellesChartData} options={{maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw||0)}}}}}/></div>
+            </ChartBlock>
+          </div>
+        )}
         {sortedExpenses.length===0 ? <EmptyState message="Aucune dépense" icon="banknote"/> : (<>
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
