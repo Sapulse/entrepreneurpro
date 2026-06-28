@@ -463,32 +463,58 @@ const YEARS_RANGE = (() => {
 
 function PeriodeFilter({periodeId, setPeriodeId, dateDebut, setDateDebut, dateFin, setDateFin}) {
   const [showYears, setShowYears] = React.useState(false);
+  const [showMonths, setShowMonths] = React.useState(false);
   const isYear = periodeId && periodeId.startsWith('y');
   const yearLabel = isYear ? periodeId.slice(1) : null;
+  const isMonth = /^m\d{4}-\d{2}$/.test(periodeId||'');
+  const selYear = isYear ? +yearLabel : (isMonth ? +periodeId.slice(1,5) : new Date().getFullYear());
+  const monthLabel = isMonth ? `${MONTH_SHORT[+periodeId.slice(6,8)-1]} ${periodeId.slice(3,5)}` : null;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex gap-1 flex-wrap items-center">
         {PERIOD_SHORTCUTS.filter(s=>s.id!=='annee').map(s => (
           <React.Fragment key={s.id}>
-            <button onClick={() => { setPeriodeId(s.id); setShowYears(false); }}
+            <button onClick={() => { setPeriodeId(s.id); setShowYears(false); setShowMonths(false); }}
               className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${periodeId===s.id?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {s.label}
             </button>
             {/* Year selector — placé juste après "Trimestre" (progression mois→trimestre→année) */}
             {s.id==='trimestre' && (
               <div className="relative">
-                <button onClick={()=>setShowYears(v=>!v)}
+                <button onClick={()=>{setShowYears(v=>!v);setShowMonths(false);}}
                   className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${isYear?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                   {isYear ? yearLabel : 'Année ▾'}
                 </button>
                 {showYears && (
                   <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 p-1 min-w-[80px]">
                     {YEARS_RANGE.map(y => (
-                      <button key={y.id} onClick={()=>{setPeriodeId(y.id);setShowYears(false);}}
+                      <button key={y.id} onClick={()=>{setPeriodeId(y.id);setShowYears(false);setShowMonths(false);}}
                         className={`block w-full text-left px-3 py-1.5 text-xs rounded-lg hover:bg-blue-50 ${periodeId===y.id?'text-blue-700 font-semibold':'text-gray-700'}`}>
                         {y.label}
                       </button>
                     ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Month selector — choix d'un mois précis (mYYYY-MM) */}
+            {s.id==='trimestre' && (
+              <div className="relative">
+                <button onClick={()=>{setShowMonths(v=>!v);setShowYears(false);}}
+                  className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${isMonth?'bg-blue-600 text-white':'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  {isMonth ? monthLabel : 'Mois ▾'}
+                </button>
+                {showMonths && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 p-1 grid grid-cols-2 gap-0.5 min-w-[140px]">
+                    {MONTH_SHORT.map((mLabel, i) => {
+                      const mid = `m${selYear}-${String(i+1).padStart(2,'0')}`;
+                      return (
+                        <button key={mid} onClick={()=>{setPeriodeId(mid);setShowMonths(false);}}
+                          className={`text-left px-2 py-1 text-xs rounded-lg hover:bg-blue-50 ${periodeId===mid?'text-blue-700 font-semibold':'text-gray-700'}`}>
+                          {mLabel} {String(selYear).slice(2)}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -770,8 +796,11 @@ function Dashboard({data, onNavigate, setData}) {
     const entries = buildLedgerEntries(data);
     const contractEntries = entries.filter(e => e.type === 'contract');
     const nonAnnule = (data.contracts||[]).filter(c => c.statut !== 'Annulé');
-    const year = new Date().getFullYear();
+    const nowY = new Date().getFullYear();
+    // Le graphe suit l'année si une année est explicitement choisie (periodeId 'yYYYY'), sinon année courante.
+    const year = (periodeId && periodeId.startsWith('y')) ? (parseInt(periodeId.slice(1),10) || nowY) : nowY;
     const prevYear = year - 1;
+    const isCurrentYear = year === nowY;
     const monthsOf = (y) => Array.from({length:12}, (_,i)=>`${y}-${String(i+1).padStart(2,'0')}`);
     const moisCur = monthsOf(year), moisPrev = monthsOf(prevYear);
 
@@ -785,8 +814,9 @@ function Dashboard({data, onNavigate, setData}) {
     const hasPrevYear  = signePrev.values.some(v=>v>0) || encaissePrev.values.some(v=>v>0);
 
     const sum = arr => arr.reduce((s,v)=>s+v,0);
-    const curMonth = new Date().getMonth();                 // 0-indexé — cumul janvier → mois en cours
-    const cumul = arr => arr.slice(0, curMonth+1).reduce((s,v)=>s+v,0);
+    // Cumul : janvier → mois en cours si année courante ; année complète si année passée.
+    const cumulMonths = isCurrentYear ? new Date().getMonth()+1 : 12;
+    const cumul = arr => arr.slice(0, cumulMonths).reduce((s,v)=>s+v,0);
     const totalSigne = sum(signe.values), totalEncaisse = sum(encaisse.values);
     const totalEncaissePrev = sum(encaissePrev.values);
     // Comparaison annuelle sur l'ENCAISSÉ : les dates de paiement sont fiables, alors que le CA signé
@@ -795,9 +825,9 @@ function Dashboard({data, onNavigate, setData}) {
     const deltaEncaisse = (totalEncaissePrev>0) ? Math.round((totalEncaisse-totalEncaissePrev)/totalEncaissePrev*100) : null;
 
     return {labels:signe.labels, signe:signe.values, encaisse:encaisse.values, micka:micka.values, cesar:cesar.values,
-      hasPrevYear, totalSigne, totalEncaisse, deltaEncaisse,
+      hasPrevYear, totalSigne, totalEncaisse, deltaEncaisse, isCurrentYear,
       cumulMicka:cumul(micka.values), cumulCesar:cumul(cesar.values), year, prevYear};
-  }, [data]);
+  }, [data, periodeId]);
 
   const caChartData = {
     labels: caEvolution.labels,
@@ -828,8 +858,8 @@ function Dashboard({data, onNavigate, setData}) {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KPICard label="CA Signé" value={fmt(stats.caSigne)} icon="file-text" color="blue"/>
             <KPICard label="CA Encaissé" value={fmt(stats.caEncaisse)} icon="wallet" color="green"/>
-            <KPICard label="Reste à encaisser" value={fmt(stats.resteTotal)} icon="hourglass" color="amber"/>
-            <KPICard label="Potentiel Prospects" value={fmt(stats.potentiel)} icon="target" color="purple"/>
+            <KPICard label="Reste à encaisser" value={fmt(stats.resteTotal)} icon="hourglass" color="amber" sub="à ce jour"/>
+            <KPICard label="Potentiel Prospects" value={fmt(stats.potentiel)} icon="target" color="purple" sub="à ce jour"/>
           </div>
         </DraggableWidget>
       );
@@ -911,7 +941,7 @@ function Dashboard({data, onNavigate, setData}) {
                       <span className="text-gray-300">·</span>
                       <span className="font-medium" style={{color:'var(--money)'}}>César : <Money value={fmt(caEvolution.cumulCesar)}/></span>
                     </div>
-                    <div className="text-center text-xs text-gray-400 mt-0.5">Cumul encaissé {caEvolution.year} (janvier → mois en cours)</div>
+                    <div className="text-center text-xs text-gray-400 mt-0.5">Cumul encaissé {caEvolution.year} ({caEvolution.isCurrentYear ? 'janvier → mois en cours' : 'année complète'})</div>
                   </>)}
             </ChartBlock>
           </div>
@@ -4131,7 +4161,7 @@ function AnalyticsModule({data}) {
   const totalCAperiod = filteredEntries.filter(e=>e.type==='contract').reduce((s,e)=>s+e.montant,0);
   const totalDepPeriod = filteredExpenses.reduce((s,e)=>s+Math.abs(Number(e.montant)||0),0);
   const totalCAGlobal = allYears.reduce((s,y)=>s+(caAnnuel[y]||0),0);
-  const periodLabel = periodeId==='custom'&&(dateDebut||dateFin) ? `${dateDebut||'…'} → ${dateFin||'…'}` : (periodeId?.startsWith('y') ? periodeId.slice(1) : PERIOD_SHORTCUTS.find(s=>s.id===periodeId)?.label||periodeId);
+  const periodLabel = periodeId==='custom'&&(dateDebut||dateFin) ? `${dateDebut||'…'} → ${dateFin||'…'}` : /^m\d{4}-\d{2}$/.test(periodeId||'') ? `${MONTH_SHORT[+periodeId.slice(6,8)-1]} ${periodeId.slice(1,5)}` : (periodeId?.startsWith('y') ? periodeId.slice(1) : PERIOD_SHORTCUTS.find(s=>s.id===periodeId)?.label||periodeId);
 
   return (
     <div className="space-y-6">

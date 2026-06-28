@@ -31,6 +31,11 @@ function buildPeriodeRange(periodeId, dateDebut, dateFin) {
     const y = parseInt(periodeId.slice(1), 10);
     if(!isNaN(y)) return {start:new Date(y,0,1), end:new Date(y,11,31,23,59,59)};
   }
+  // Mode mois précis : 'mYYYY-MM' (ex. 'm2026-03' → mars 2026)
+  if(periodeId && /^m\d{4}-\d{2}$/.test(periodeId)) {
+    const y = +periodeId.slice(1,5), m = +periodeId.slice(6,8);
+    return {start:new Date(y, m-1, 1), end:new Date(y, m, 0, 23,59,59)};
+  }
   return getPeriodeRange(periodeId);
 }
 
