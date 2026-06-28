@@ -3135,6 +3135,42 @@ function ParcoursModule({data, setData}) {
 // ============================================================
 // BANK & EXPENSES MODULE
 // ============================================================
+// Champ Catégorie réutilisable (dépenses + abonnements) : vrai <select> sur la liste
+// dérivée `categories` (7 défauts + catégories perso) + bouton « + » pour en créer une à
+// la volée (Option B : la nouvelle catégorie est mémorisée à l'enregistrement via la dépense).
+function CategoryField({value, onChange, categories=[], defaultLabel='Autre'}) {
+  const [adding, setAdding] = React.useState(false);
+  const [draft, setDraft] = React.useState('');
+  // Inclut la valeur courante si elle n'est pas (encore) dans la liste dérivée
+  // (cas d'une catégorie fraîchement créée, pas encore portée par une dépense enregistrée).
+  const options = (value && !categories.includes(value)) ? [...categories, value] : categories;
+  const confirm = () => { const v = draft.trim(); if(!v) return; onChange(v); setDraft(''); setAdding(false); };
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
+      {!adding ? (
+        <div className="flex gap-1.5">
+          <select className={selectCls} value={value||defaultLabel} onChange={e=>onChange(e.target.value)}>
+            {options.map(c=><option key={c}>{c}</option>)}
+          </select>
+          <button type="button" onClick={()=>{setDraft('');setAdding(true);}} title="Nouvelle catégorie"
+            className="flex-shrink-0 w-9 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-50 text-base leading-none">+</button>
+        </div>
+      ) : (
+        <div className="flex gap-1.5">
+          <input autoFocus className={inputCls} value={draft} placeholder="Nouvelle catégorie…"
+            onChange={e=>setDraft(e.target.value)}
+            onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();confirm();} if(e.key==='Escape'){setAdding(false);} }}/>
+          <button type="button" onClick={confirm} title="Ajouter"
+            className="flex-shrink-0 w-9 rounded-lg text-white text-sm" style={{background:'var(--brand)'}}>✓</button>
+          <button type="button" onClick={()=>setAdding(false)} title="Annuler"
+            className="flex-shrink-0 w-9 rounded-lg border border-gray-300 text-gray-400 hover:bg-gray-50 text-sm">✕</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ExpenseModal({open, onClose, expense, onSave, onDelete, categories=[]}) {
   const [form, setForm] = React.useState({});
   const [confirmDelete, setConfirmDelete] = React.useState(false);
@@ -3143,10 +3179,7 @@ function ExpenseModal({open, onClose, expense, onSave, onDelete, categories=[]})
   React.useEffect(() => {
     if(open) {
       if(expense) setForm({...expense});
-      // categorie vide au départ : un <input list> pré-rempli filtrerait le datalist à
-      // la seule valeur courante (ex. « Autre »). Vide → toute la liste est proposée au clic.
-      // handleSave retombe sur « Autre » si le champ reste vide.
-      else setForm({id:null,titre:'',montant:'',categorie:'',payePar:'Micka',date:todayStr(),refacturable:false,notes:''});
+      else setForm({id:null,titre:'',montant:'',categorie:'Autre',payePar:'Micka',date:todayStr(),refacturable:false,notes:''});
     }
   }, [open, expense]);
 
@@ -3162,7 +3195,7 @@ function ExpenseModal({open, onClose, expense, onSave, onDelete, categories=[]})
         <div><label className="block text-xs font-medium text-gray-600 mb-1">Titre *</label><input className={inputCls} value={form.titre||''} onChange={e=>setForm(f=>({...f,titre:e.target.value}))} placeholder="Description"/></div>
         <div className="grid grid-cols-2 gap-3">
           <div><label className="block text-xs font-medium text-gray-600 mb-1">Montant (€) *</label><input className={inputCls} type="number" step="0.01" value={form.montant||''} onChange={e=>setForm(f=>({...f,montant:e.target.value}))} placeholder="0"/></div>
-          <div><label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label><input className={inputCls} list="expense-cat-list" value={form.categorie||''} onChange={e=>setForm(f=>({...f,categorie:e.target.value}))} placeholder="Choisir ou créer…"/><datalist id="expense-cat-list">{categories.map(c=><option key={c} value={c}/>)}</datalist></div>
+          <CategoryField value={form.categorie} onChange={v=>setForm(f=>({...f,categorie:v}))} categories={categories} defaultLabel="Autre"/>
           <div><label className="block text-xs font-medium text-gray-600 mb-1">Payé par</label><select className={selectCls} value={form.payePar||'Micka'} onChange={e=>setForm(f=>({...f,payePar:e.target.value}))}>{ASSIGNEES.map(a=><option key={a}>{a}</option>)}</select></div>
           <div><label className="block text-xs font-medium text-gray-600 mb-1">Date</label><input className={inputCls} type="date" value={form.date||todayStr()} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
         </div>
@@ -3236,8 +3269,7 @@ function SubModal({open, onClose, sub, onSave, onDelete, categories=[]}) {
   React.useEffect(() => {
     if(open) {
       if(sub) setForm({...sub, paidBy:sub.paidBy||'Système', imputéÀ:sub.imputéÀ||'Commun'});
-      // category vide au départ (même raison que les dépenses) — handleSave retombe sur « Logiciels ».
-      else setForm({id:null,name:'',amount:'',day:1,category:'',active:true,paidBy:'Système',imputéÀ:'Commun'});
+      else setForm({id:null,name:'',amount:'',day:1,category:'Logiciels',active:true,paidBy:'Système',imputéÀ:'Commun'});
     }
   }, [open, sub]);
 
@@ -3254,7 +3286,7 @@ function SubModal({open, onClose, sub, onSave, onDelete, categories=[]}) {
         <div className="grid grid-cols-2 gap-3">
           <div><label className="block text-xs font-medium text-gray-600 mb-1">Montant (€/mois) *</label><input className={inputCls} type="number" step="0.01" value={form.amount||''} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} placeholder="0"/></div>
           <div><label className="block text-xs font-medium text-gray-600 mb-1">Jour du mois (1-31)</label><input className={inputCls} type="number" value={form.day||1} min={1} max={31} onChange={e=>setForm(f=>({...f,day:e.target.value}))}/></div>
-          <div><label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label><input className={inputCls} list="sub-cat-list" value={form.category||''} onChange={e=>setForm(f=>({...f,category:e.target.value}))} placeholder="Choisir ou créer…"/><datalist id="sub-cat-list">{categories.map(c=><option key={c} value={c}/>)}</datalist></div>
+          <CategoryField value={form.category} onChange={v=>setForm(f=>({...f,category:v}))} categories={categories} defaultLabel="Logiciels"/>
           <div><label className="block text-xs font-medium text-gray-600 mb-1">Payé par</label><select className={selectCls} value={form.paidBy||'Système'} onChange={e=>setForm(f=>({...f,paidBy:e.target.value}))}>{[...ASSIGNEES,'Système'].map(a=><option key={a}>{a}</option>)}</select></div>
           <div><label className="block text-xs font-medium text-gray-600 mb-1">Imputé à</label><select className={selectCls} value={form.imputéÀ||'Commun'} onChange={e=>setForm(f=>({...f,imputéÀ:e.target.value}))}>{IMPUTEES.map(a=><option key={a}>{a}</option>)}</select></div>
         </div>
