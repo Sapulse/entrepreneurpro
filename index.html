@@ -4217,7 +4217,7 @@ function AnalyticsModule({data}) {
 // ============================================================
 // PILOTAGE MODULE
 // ============================================================
-function PilotageModule({data}) {
+function PilotageModule({data, onNavigate}) {
   const [periodeId, setPeriodeId] = React.useState('tout');
   const [dateDebut, setDateDebut] = React.useState('');
   const [dateFin, setDateFin] = React.useState('');
@@ -4411,6 +4411,56 @@ function PilotageModule({data}) {
       : parts.length === 1 ? first + "."
       : first + ", " + parts.slice(1).join(", ") + ".";
 
+    // === C2 – Listes d'action ===
+    // Contrats en cours, triés urgence croissante (échéance la plus proche en tête)
+    const contratsEnCoursList = data.contracts
+      .filter(c => c.statut === 'En cours')
+      .map(c => ({
+        id: c.id, client: c.client, prestation: c.prestation,
+        montant: Number(c.montant)||0,
+        payStatus: calcPaymentStatus(Number(c.montant)||0, c.payments),
+        days: daysUntil(c.dateFin), dateFin: c.dateFin,
+      }))
+      .sort((a, b) => (a.days === null ? Infinity : a.days) - (b.days === null ? Infinity : b.days));
+
+    // Parcours en cours (non archivés) + prochaine étape / nb d'entrées
+    const parcoursList = (data.parcours || [])
+      .filter(p => p.statut !== 'archivé')
+      .map(p => {
+        const cl = (data.clients || []).find(x => x.id === p.clientId);
+        const clientNom = cl ? (cl.entreprise || cl.nom || '—') : '—';
+        let next, done = false;
+        if(p.type === 'formation') {
+          const step = PARCOURS_STEPS.find(s => !(p.etapes || {})[s.key]);
+          done = !step;
+          next = step ? `Prochaine étape : ${step.label}` : 'Toutes les étapes faites';
+        } else {
+          const n = (p.entrees || []).length;
+          next = n > 0 ? `${n} entrée${n > 1 ? 's' : ''} de suivi` : 'Aucune entrée';
+        }
+        return {id: p.id, titre: p.titre, clientNom, next, type: p.type, done};
+      });
+
+    // Tâches à traiter, en retard en tête puis par échéance croissante
+    const tachesList = data.tasks
+      .filter(t => t.statut !== 'Terminé')
+      .map(t => ({
+        id: t.id, titre: t.titre, client: t.client, echeance: t.echeance,
+        priorite: t.priorite, statut: t.statut,
+        overdue: !!(t.echeance && new Date(t.echeance + 'T23:59:59') < today),
+      }))
+      .sort((a, b) => {
+        if(a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+        return (a.echeance ? new Date(a.echeance).getTime() : Infinity) - (b.echeance ? new Date(b.echeance).getTime() : Infinity);
+      });
+
+    // === C3 – Évolution CA encaissé année vs N-1 (logique fiable du Dashboard) ===
+    const nowY = new Date().getFullYear();
+    const evoYear = (periodeId && periodeId.startsWith('y')) ? (parseInt(periodeId.slice(1), 10) || nowY) : nowY;
+    const encaisseAnnee = entries.filter(e => e.type === 'contract' && e.date && +e.date.slice(0,4) === evoYear).reduce((s, e) => s + e.montant, 0);
+    const encaisseAnneePrev = entries.filter(e => e.type === 'contract' && e.date && +e.date.slice(0,4) === (evoYear - 1)).reduce((s, e) => s + e.montant, 0);
+    const evolutionEncaisseAnnee = encaisseAnneePrev > 0 ? Math.round(((encaisseAnnee - encaisseAnneePrev) / encaisseAnneePrev) * 100) : null;
+
     return {
       caSigne, caEncaisse, resteTotal, nbContrats, panierMoyen, tauxTransfo, nbClients, totalCRM,
       prevCaSigne, prevCaEncaisse, prevNbContrats, prevPanierMoyen,
@@ -4422,6 +4472,8 @@ function PilotageModule({data}) {
       mickaPay, cesarPay, urssafMicka, urssafCesar, netMickaUrssaf, netCesarUrssaf,
       urssafTotal, netUrssafTotal, tauxURSSAFMicka, tauxURSSAFCesar,
       contratsEnCours, tachesEnRetard, dossiersUrgents, delaiMoyen,
+      contratsEnCoursList, parcoursList, tachesList,
+      evoYear, encaisseAnnee, encaisseAnneePrev, evolutionEncaisseAnnee,
       nouveauxClients, pipeline, potentielPipeline, prevNouveauxClients,
       evolutionCA, evolutionContrats, evolutionPanier,
       objMicka, objCesar, objTotal, mickaCaAnnuel, cesarCaAnnuel, caAnnuel,
@@ -4492,6 +4544,23 @@ function PilotageModule({data}) {
     );
   };
 
+  // Mini-liste d'action (C2)
+  const ActionList = ({title, icon, count, children}) => (
+    <div className="rounded-xl border border-gray-100 bg-gray-50/50 p-3">
+      <div className="flex items-center gap-2 mb-2 px-1">
+        <span style={{color:'var(--brand)'}}><Icon name={icon} size={15}/></span>
+        <span className="text-xs font-semibold text-gray-600">{title}</span>
+        <span className="ml-auto text-xs bg-gray-200 text-gray-500 rounded-full px-2 py-0.5 font-medium">{count}</span>
+      </div>
+      <div className="space-y-1">{children}</div>
+    </div>
+  );
+  const ActionRow = ({onClick, children}) => (
+    <div onClick={onClick} className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-white border border-gray-100 hover:border-[var(--brand)] hover:shadow-sm cursor-pointer transition-all">
+      {children}
+    </div>
+  );
+
   return (
     <div className="space-y-6">
 
@@ -4511,6 +4580,34 @@ function PilotageModule({data}) {
       <div className="bg-[var(--brand-soft)] border border-[var(--border)] rounded-[var(--radius)] p-4 flex items-start gap-3">
         <span className="mt-0.5 flex-shrink-0" style={{color:'var(--brand)'}}><Icon name="lightbulb" size={20}/></span>
         <p className="text-sm text-slate-700 leading-relaxed font-medium">{stats.narrative}</p>
+      </div>
+
+      {/* C1 — En-tête Santé : les 3 chiffres essentiels mis en avant */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="rounded-[var(--radius)] border p-5" style={{background:'var(--money-soft)', borderColor:'var(--money-soft)'}}>
+          <div className="flex items-center gap-2 mb-2" style={{color:'var(--money)'}}>
+            <Icon name="wallet" size={18}/>
+            <span className="text-xs font-semibold uppercase tracking-wide">Net estimé (après URSSAF)</span>
+          </div>
+          <div className="text-3xl font-bold" style={{color:'var(--money)'}}>{fmtE(stats.netUrssafTotal)}</div>
+          <div className="text-xs mt-1" style={{color:'var(--text-muted)'}}>CA encaissé {fmtE(stats.caEncaisse)} − URSSAF {fmtE(stats.urssafTotal)}</div>
+        </div>
+        <div className="rounded-[var(--radius)] border p-5" style={{background:'var(--brand-soft)', borderColor:'var(--brand-soft)'}}>
+          <div className="flex items-center gap-2 mb-2" style={{color:'var(--brand)'}}>
+            <Icon name="trending-up" size={18}/>
+            <span className="text-xs font-semibold uppercase tracking-wide">Taux de marge</span>
+          </div>
+          <div className="text-3xl font-bold" style={{color:'var(--brand)'}}>{stats.tauxMarge}%</div>
+          <div className="text-xs mt-1" style={{color:'var(--text-muted)'}}>Marge brute {fmtE(stats.margeBrute)}</div>
+        </div>
+        <div className="rounded-[var(--radius)] border p-5" style={{background:'var(--amber-soft)', borderColor:'var(--amber-soft)'}}>
+          <div className="flex items-center gap-2 mb-2" style={{color:'var(--amber)'}}>
+            <Icon name="clock" size={18}/>
+            <span className="text-xs font-semibold uppercase tracking-wide">Reste à encaisser</span>
+          </div>
+          <div className="text-3xl font-bold" style={{color:'var(--amber)'}}>{fmtE(stats.resteTotal)}</div>
+          <div className="text-xs mt-1" style={{color:'var(--text-muted)'}}>Sur contrats non soldés</div>
+        </div>
       </div>
 
       {/* Points d'attention */}
@@ -4634,22 +4731,91 @@ function PilotageModule({data}) {
         </div>
       </Section>
 
-      {/* BLOC 4 – Opérations */}
-      <Section icon="settings" title="Opérations" subtitle="Est-ce que l'activité tourne bien au quotidien ?">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KpiBox label="Contrats en cours" value={String(stats.contratsEnCours)} color="blue"/>
-          <KpiBox label="Tâches en retard" value={String(stats.tachesEnRetard)} color={stats.tachesEnRetard === 0 ? 'green' : stats.tachesEnRetard <= 3 ? 'amber' : 'red'}/>
-          <KpiBox label="Dossiers urgents" value={String(stats.dossiersUrgents)} sub="Fin dans ≤ 30 jours" color={stats.dossiersUrgents === 0 ? 'gray' : 'amber'}/>
-          <KpiBox label="Délai moyen encaissement" value={stats.delaiMoyen !== null ? `${stats.delaiMoyen}j` : '—'} sub="Signature → 1er paiement" color="indigo"/>
-        </div>
-      </Section>
+      {/* BLOC 4 – Opérations (liste d'action) */}
+      {(stats.contratsEnCoursList.length > 0 || stats.parcoursList.length > 0 || stats.tachesList.length > 0) && (
+        <Section icon="settings" title="Opérations" subtitle="Ce qui demande de l'attention au quotidien — cliquez pour traiter">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+            {/* Contrats en cours */}
+            {stats.contratsEnCoursList.length > 0 && (
+              <ActionList title="Contrats en cours" icon="file-text" count={stats.contratsEnCoursList.length}>
+                {stats.contratsEnCoursList.slice(0, 6).map(c => {
+                  const urg = c.days === null ? null : c.days < 0 ? {cls:'bg-red-100 text-red-700', txt:'Échue'} : c.days <= 7 ? {cls:'bg-red-100 text-red-700', txt:`J-${c.days}`} : c.days <= 30 ? {cls:'bg-amber-100 text-amber-700', txt:`J-${c.days}`} : null;
+                  return (
+                    <ActionRow key={c.id} onClick={() => onNavigate && onNavigate('contracts', {id:c.id, tab:'paiements'})}>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-800 truncate">{c.client}</div>
+                        <div className="text-xs text-gray-400 truncate">{c.prestation}</div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <StatusBadge status={c.payStatus}/>
+                        {urg && <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${urg.cls}`}>{urg.txt}</span>}
+                      </div>
+                    </ActionRow>
+                  );
+                })}
+                {stats.contratsEnCoursList.length > 6 && (
+                  <button onClick={() => onNavigate && onNavigate('contracts')} className="w-full text-xs text-gray-400 hover:text-[var(--brand)] py-1.5 font-medium">+ {stats.contratsEnCoursList.length - 6} autre{stats.contratsEnCoursList.length - 6 > 1 ? 's' : ''}</button>
+                )}
+              </ActionList>
+            )}
+
+            {/* Parcours en cours */}
+            {stats.parcoursList.length > 0 && (
+              <ActionList title="Parcours en cours" icon="compass" count={stats.parcoursList.length}>
+                {stats.parcoursList.slice(0, 6).map(p => (
+                  <ActionRow key={p.id} onClick={() => onNavigate && onNavigate('parcours')}>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-gray-800 truncate">{p.titre}</div>
+                      <div className="text-xs text-gray-400 truncate">{p.clientNom}</div>
+                    </div>
+                    <span className={`text-xs font-medium flex-shrink-0 ${p.done ? 'text-green-600' : 'text-[var(--brand)]'}`}>{p.next}</span>
+                  </ActionRow>
+                ))}
+                {stats.parcoursList.length > 6 && (
+                  <button onClick={() => onNavigate && onNavigate('parcours')} className="w-full text-xs text-gray-400 hover:text-[var(--brand)] py-1.5 font-medium">+ {stats.parcoursList.length - 6} autre{stats.parcoursList.length - 6 > 1 ? 's' : ''}</button>
+                )}
+              </ActionList>
+            )}
+
+            {/* Tâches à traiter */}
+            {stats.tachesList.length > 0 && (
+              <ActionList title="Tâches à traiter" icon="check-circle" count={stats.tachesList.length}>
+                {stats.tachesList.slice(0, 6).map(t => (
+                  <ActionRow key={t.id} onClick={() => onNavigate && onNavigate('tasks')}>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-gray-800 truncate">{t.titre}</div>
+                      {t.client && <div className="text-xs text-gray-400 truncate">{t.client}</div>}
+                    </div>
+                    {t.overdue
+                      ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 flex-shrink-0">En retard</span>
+                      : t.echeance ? <span className="text-xs text-gray-400 flex-shrink-0">{formatDate(t.echeance)}</span> : null}
+                  </ActionRow>
+                ))}
+                {stats.tachesList.length > 6 && (
+                  <button onClick={() => onNavigate && onNavigate('tasks')} className="w-full text-xs text-gray-400 hover:text-[var(--brand)] py-1.5 font-medium">+ {stats.tachesList.length - 6} autre{stats.tachesList.length - 6 > 1 ? 's' : ''}</button>
+                )}
+              </ActionList>
+            )}
+
+          </div>
+
+          {/* Compteurs de synthèse — discrets */}
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-5 pt-4 border-t border-gray-100 text-xs text-gray-400">
+            <span><span className="font-semibold text-gray-600">{stats.delaiMoyen !== null ? `${stats.delaiMoyen}j` : '—'}</span> délai moyen encaissement</span>
+            <span><span className={`font-semibold ${stats.tachesEnRetard > 0 ? 'text-red-500' : 'text-gray-600'}`}>{stats.tachesEnRetard}</span> tâche{stats.tachesEnRetard !== 1 ? 's' : ''} en retard</span>
+            <span><span className={`font-semibold ${stats.dossiersUrgents > 0 ? 'text-amber-600' : 'text-gray-600'}`}>{stats.dossiersUrgents}</span> dossier{stats.dossiersUrgents !== 1 ? 's' : ''} urgent{stats.dossiersUrgents !== 1 ? 's' : ''} (≤ 30j)</span>
+            <span><span className="font-semibold text-gray-600">{stats.contratsEnCours}</span> contrat{stats.contratsEnCours !== 1 ? 's' : ''} en cours</span>
+          </div>
+        </Section>
+      )}
 
       {/* BLOC 5 – Croissance */}
       <Section icon="rocket" title="Croissance" subtitle="Est-ce que l'activité prépare l'avenir ?">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <KpiBox label="Nouveaux clients" value={String(stats.nouveauxClients)} curr={stats.nouveauxClients} prev={stats.prevNouveauxClients} sub="Passés en statut Client" color="green"/>
           <KpiBox label="Pipeline prospects" value={String(stats.pipeline)} sub={`Potentiel ${fmtE(stats.potentielPipeline)}`} color="purple"/>
-          <KpiBox label="Évolution CA" value={stats.evolutionCA !== null ? `${stats.evolutionCA > 0 ? '+' : ''}${stats.evolutionCA}%` : '—'} sub="vs période précédente" color={stats.evolutionCA === null ? 'gray' : stats.evolutionCA >= 0 ? 'green' : 'red'}/>
+          <KpiBox label="Évolution CA encaissé" value={stats.evolutionEncaisseAnnee !== null ? `${stats.evolutionEncaisseAnnee > 0 ? '+' : ''}${stats.evolutionEncaisseAnnee}%` : '—'} sub={stats.evolutionEncaisseAnnee !== null ? `${stats.evoYear} vs ${stats.evoYear - 1}` : `Pas de données ${stats.evoYear - 1}`} color={stats.evolutionEncaisseAnnee === null ? 'gray' : stats.evolutionEncaisseAnnee >= 0 ? 'green' : 'red'}/>
           <KpiBox label="Panier moyen" value={fmtE(stats.panierMoyen)} curr={stats.panierMoyen} prev={stats.prevPanierMoyen} sub="vs période précédente" color={stats.evolutionPanier === null ? 'gray' : stats.evolutionPanier >= 0 ? 'indigo' : 'amber'}/>
         </div>
         {/* Objectifs annuels */}
@@ -5325,7 +5491,7 @@ function App() {
     const wrap = (component) => <ErrorBoundary key={activeModule}>{component}</ErrorBoundary>;
     switch(activeModule) {
       case 'dashboard': return wrap(<Dashboard data={data} onNavigate={onNavigate} setData={setData}/>);
-      case 'pilotage': return wrap(<PilotageModule data={data}/>);
+      case 'pilotage': return wrap(<PilotageModule data={data} onNavigate={onNavigate}/>);
       case 'analytics': return wrap(<AnalyticsModule data={data}/>);
       case 'quotes': return wrap(<QuotesModule data={data} setData={setData} onNavigate={onNavigate}/>);
       case 'invoices': return wrap(<InvoicesModule data={data} setData={setData}/>);
