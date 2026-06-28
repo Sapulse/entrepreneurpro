@@ -788,12 +788,14 @@ function Dashboard({data, onNavigate, setData}) {
     const curMonth = new Date().getMonth();                 // 0-indexé — cumul janvier → mois en cours
     const cumul = arr => arr.slice(0, curMonth+1).reduce((s,v)=>s+v,0);
     const totalSigne = sum(signe.values), totalEncaisse = sum(encaisse.values);
-    const totalSignePrev = sum(signePrev.values);
-    // Delta vs N-1 sur le CA SIGNÉ (le graphe est désormais 100% CA signé → cohérence carte/graphe)
-    const deltaSigne = (hasPrevYear && totalSignePrev>0) ? Math.round((totalSigne-totalSignePrev)/totalSignePrev*100) : null;
+    const totalEncaissePrev = sum(encaissePrev.values);
+    // Comparaison annuelle sur l'ENCAISSÉ : les dates de paiement sont fiables, alors que le CA signé
+    // par dateDebut ne l'est pas (dateDebut vaut "aujourd'hui" par défaut → 2025 quasi vide → % aberrant).
+    // Garde-fou : base N-1 = 0 → null (affiché "—"), jamais de pourcentage aberrant.
+    const deltaEncaisse = (totalEncaissePrev>0) ? Math.round((totalEncaisse-totalEncaissePrev)/totalEncaissePrev*100) : null;
 
     return {labels:signe.labels, signe:signe.values, encaisse:encaisse.values, micka:micka.values, cesar:cesar.values,
-      signePrev:signePrev.values, hasPrevYear, totalSigne, totalEncaisse, deltaSigne,
+      hasPrevYear, totalSigne, totalEncaisse, deltaEncaisse,
       cumulMicka:cumul(micka.values), cumulCesar:cumul(cesar.values), year, prevYear};
   }, [data]);
 
@@ -801,7 +803,6 @@ function Dashboard({data, onNavigate, setData}) {
     labels: caEvolution.labels,
     datasets: [
       {label:'CA signé', type:'bar', data:caEvolution.signe, backgroundColor:'#185FA5aa', borderColor:'#185FA5', borderWidth:1},
-      ...(caEvolution.hasPrevYear ? [{label:`CA signé ${caEvolution.prevYear}`, type:'line', data:caEvolution.signePrev, borderColor:'#9CA3AF', borderDash:[5,4], borderWidth:1.5, pointRadius:0, fill:false}] : []),
     ],
   };
   const duoChartData = {
@@ -890,9 +891,9 @@ function Dashboard({data, onNavigate, setData}) {
                   <div className="text-[19px] font-medium leading-tight" style={{color:'var(--brand)'}}><Money value={fmt(caEvolution.totalSigne)}/></div>
                 </div>
                 <div className="rounded-xl p-3 bg-gray-50">
-                  <div className="text-xs font-medium leading-snug text-gray-500">vs {caEvolution.prevYear}</div>
-                  <div className="text-[19px] font-medium leading-tight" style={{color: caEvolution.deltaSigne==null ? 'var(--text-muted)' : caEvolution.deltaSigne>=0 ? 'var(--money)' : '#E0654F'}}>
-                    {caEvolution.deltaSigne==null ? '—' : `${caEvolution.deltaSigne>=0?'+':''}${caEvolution.deltaSigne}%`}
+                  <div className="text-xs font-medium leading-snug text-gray-500">vs {caEvolution.prevYear} · encaissé</div>
+                  <div className="text-[19px] font-medium leading-tight" style={{color: caEvolution.deltaEncaisse==null ? 'var(--text-muted)' : caEvolution.deltaEncaisse>=0 ? 'var(--money)' : '#E0654F'}}>
+                    {caEvolution.deltaEncaisse==null ? '—' : `${caEvolution.deltaEncaisse>=0?'+':''}${caEvolution.deltaEncaisse}%`}
                   </div>
                 </div>
               </div>
