@@ -80,6 +80,7 @@ const DASHBOARD_WIDGETS = [
   {id:'duo', label:'Trésorerie Duo'},
   {id:'reste', label:'Reste à encaisser'},
   {id:'urgents', label:'Dossiers urgents'},
+  {id:'ca_multi_annee', label:'CA mensuel par année'},
 ];
 
 const PERIOD_SHORTCUTS = [

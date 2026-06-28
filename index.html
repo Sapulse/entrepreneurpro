@@ -831,6 +831,33 @@ function Dashboard({data, onNavigate, setData}) {
       cumulMicka:cumul(micka.values), cumulCesar:cumul(cesar.values), year, prevYear};
   }, [data, periodeId]);
 
+  // CA mensuel par année (multi-années, global — pas de filtre de période).
+  // Récupéré de l'ancien écran Analytics (calculs caMonthlyByYear + allYears identiques).
+  const caMultiYear = React.useMemo(() => {
+    const contractEntries = buildLedgerEntries(data).filter(e => e.type === 'contract' && e.date);
+    const map = {}; const years = new Set();
+    contractEntries.forEach(e => {
+      const y = +e.date.substring(0,4), m = +e.date.substring(5,7)-1;
+      years.add(y);
+      if(!map[y]) map[y] = Array(12).fill(0);
+      map[y][m] += e.montant;
+    });
+    const allYears = [...years].sort();
+    return {
+      hasData: allYears.length > 0,
+      data: {
+        labels: MONTH_SHORT,
+        datasets: allYears.map((y,i) => ({
+          label: String(y),
+          data: map[y] || Array(12).fill(0),
+          backgroundColor: CHART_COLORS[i%CHART_COLORS.length] + 'aa',
+          borderColor: CHART_COLORS[i%CHART_COLORS.length],
+          borderWidth: 1,
+        })),
+      },
+    };
+  }, [data]);
+
   const caChartData = {
     labels: caEvolution.labels,
     datasets: [
@@ -1111,6 +1138,15 @@ function Dashboard({data, onNavigate, setData}) {
               </div>
             )}
           </div>
+        </DraggableWidget>
+      );
+      case 'ca_multi_annee': return (
+        <DraggableWidget key={id} {...wProps(id)}>
+          <ChartBlock title="CA mensuel par année" icon="bar-chart">
+            {!caMultiYear.hasData
+              ? <EmptyState message="Aucune donnée" icon="bar-chart"/>
+              : <div className="h-72"><ChartCanvas type="bar" data={caMultiYear.data} options={{maintainAspectRatio:false}}/></div>}
+          </ChartBlock>
         </DraggableWidget>
       );
       default: return null;
