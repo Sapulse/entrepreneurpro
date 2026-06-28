@@ -389,7 +389,7 @@ function GlobalSearch({data, onNavigate, onClose}) {
     (data.clients||[]).filter(c=>normalize(c.entreprise).includes(nq)||normalize(c.nom).includes(nq)).slice(0,4).forEach(c=>res.push({type:'Client',icon:'👤',label:c.entreprise,sub:c.nom,val:c.etape,action:()=>onNavigate('crm',{id:c.id})}));
     (data.tasks||[]).filter(t=>normalize(t.titre).includes(nq)||normalize(t.client||'').includes(nq)).slice(0,3).forEach(t=>res.push({type:'Tâche',icon:'✅',label:t.titre,sub:t.client,val:t.statut,action:()=>onNavigate('tasks')}));
     (data.bank?.transactions||[]).filter(t=>normalize(t.label).includes(nq)).slice(0,3).forEach(t=>res.push({type:'Transaction',icon:'🏦',label:t.label,sub:formatDate(t.date),val:fmt(t.montant),action:()=>onNavigate('bank',{type:'bankTx',id:t.id})}));
-    (data.quotes||[]).filter(q2=>normalize(q2.client).includes(nq)||normalize(q2.prestation||'').includes(nq)).slice(0,3).forEach(q2=>res.push({type:'Devis',icon:'📋',label:q2.client,sub:q2.prestation,val:fmt(q2.montant),action:()=>onNavigate('quotes')}));
+    // Recherche Devis retirée (écran déconnecté — LOT 1 simplification)
     return res;
   }, [q, data]);
 
@@ -4884,12 +4884,10 @@ const NAV_ITEMS = [
   {id:'pilotage', label:'Pilotage', icon:'target'}, // placement temporaire — fusion future avec Dashboard
   {group:'clients_ventes', label:'Clients & Ventes', icon:'users', children:[
     {id:'crm', label:'CRM', icon:'users'},
-    {id:'quotes', label:'Devis', icon:'clipboard-list'},
     {id:'contracts', label:'Contrats', icon:'file-text'},
   ]},
   {group:'finances', label:'Finances', icon:'banknote', children:[
     {id:'tresorerie', label:'Trésorerie', icon:'wallet'},
-    {id:'invoices', label:'Facturation', icon:'receipt'},
     {id:'ledger', label:'Grand Livre', icon:'book-open'},
     {id:'bank', label:'Banque & Frais', icon:'landmark'},
     {id:'analytics', label:'Analytics', icon:'trending-up'},
@@ -5493,8 +5491,9 @@ function App() {
       case 'dashboard': return wrap(<Dashboard data={data} onNavigate={onNavigate} setData={setData}/>);
       case 'pilotage': return wrap(<PilotageModule data={data} onNavigate={onNavigate}/>);
       case 'analytics': return wrap(<AnalyticsModule data={data}/>);
-      case 'quotes': return wrap(<QuotesModule data={data} setData={setData} onNavigate={onNavigate}/>);
-      case 'invoices': return wrap(<InvoicesModule data={data} setData={setData}/>);
+      // Écrans Devis / Facturation retirés du menu et du routeur (LOT 1 simplification) —
+      // composants QuotesModule/InvoicesModule et données data.quotes/data.invoices conservés
+      // (inertes mais persistés) pour réversibilité immédiate.
       case 'contracts': return wrap(<ContractsModule data={data} setData={setData} deepLink={contractDeepLink} clearDeepLink={()=>setContractDeepLink(null)}/>);
       case 'crm': return wrap(<CRMModule data={data} setData={setData} onNavigate={onNavigate}/>);
       case 'tasks': return wrap(<TasksModule data={data} setData={setData}/>);
