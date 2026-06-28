@@ -4323,7 +4323,9 @@ function PilotageModule({data, onNavigate}) {
     });
     const topClient = Object.entries(clientsCA).sort((a, b) => b[1] - a[1])[0] || null;
     const partTopClient = (topClient && caEncaisse > 0) ? Math.round((topClient[1] / caEncaisse) * 100) : 0;
-    const top3 = Object.entries(clientsCA).sort((a,b) => b[1]-a[1]).slice(0, 3);
+    const clientsCASorted = Object.entries(clientsCA).sort((a,b) => b[1]-a[1]);
+    const top3 = clientsCASorted.slice(0, 3);
+    const caParClient = clientsCASorted.slice(0, 10); // graphe « CA par client » (récupéré d'Analytics)
 
     const prevDepenses = prevFiltered.filter(e => e.montant < 0).reduce((s, e) => s + Math.abs(e.montant), 0);
     const prevMargeBrute = prevFiltered.filter(e => e.type === 'contract').reduce((s,e)=>s+e.montant,0) - prevDepenses;
@@ -4512,7 +4514,7 @@ function PilotageModule({data, onNavigate}) {
     return {
       caSigne, caEncaisse, resteTotal, nbContrats, panierMoyen, tauxTransfo, nbClients, totalCRM,
       prevCaSigne, prevCaEncaisse, prevNbContrats, prevPanierMoyen,
-      totalDepenses, margeBrute, tauxMarge, margeParContrat, topClient, partTopClient, top3,
+      totalDepenses, margeBrute, tauxMarge, margeParContrat, topClient, partTopClient, top3, caParClient,
       prevDepenses, prevMargeBrute,
       tresoReelle, tresoProjetee, apports, ecartDuo, netMicka, netCesar,
       debiteur, crediteur, montantDu, netMickaProj, netCesarProj,
@@ -4914,6 +4916,18 @@ function PilotageModule({data, onNavigate}) {
                 </div>
               ))}
             </div>
+            {/* Graphe « CA par client » (récupéré de l'ancien écran Analytics) — barres
+                horizontales triées, branché sur clientsCA → suit la période de Pilotage. */}
+            {stats.caParClient.length > 0 && (
+              <div className="mt-4">
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">CA encaissé par client</div>
+                <div style={{height: Math.max(160, stats.caParClient.length * 34)}}>
+                  <ChartCanvas type="bar"
+                    data={{labels: stats.caParClient.map(([name]) => name), datasets: [{label:'CA encaissé', data: stats.caParClient.map(([,ca]) => ca), backgroundColor:'#185FA5bb', borderColor:'#185FA5', borderWidth:1}]}}
+                    options={{indexAxis:'y', maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw||0)}}}}}/>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Section>
