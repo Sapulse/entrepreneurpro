@@ -3140,11 +3140,12 @@ function ParcoursModule({data, setData}) {
 // la volée (Option B : la nouvelle catégorie est mémorisée à l'enregistrement via la dépense).
 function CategoryField({value, onChange, categories=[], defaultLabel='Autre'}) {
   const [adding, setAdding] = React.useState(false);
-  const [draft, setDraft] = React.useState('');
+  const [prev, setPrev] = React.useState('');   // valeur avant création, pour pouvoir annuler
   // Inclut la valeur courante si elle n'est pas (encore) dans la liste dérivée
   // (cas d'une catégorie fraîchement créée, pas encore portée par une dépense enregistrée).
   const options = (value && !categories.includes(value)) ? [...categories, value] : categories;
-  const confirm = () => { const v = draft.trim(); if(!v) return; onChange(v); setDraft(''); setAdding(false); };
+  const startAdding = () => { setPrev(value||''); onChange(''); setAdding(true); };
+  const cancel = () => { onChange(prev); setAdding(false); };
   return (
     <div>
       <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
@@ -3153,17 +3154,19 @@ function CategoryField({value, onChange, categories=[], defaultLabel='Autre'}) {
           <select className={selectCls} value={value||defaultLabel} onChange={e=>onChange(e.target.value)}>
             {options.map(c=><option key={c}>{c}</option>)}
           </select>
-          <button type="button" onClick={()=>{setDraft('');setAdding(true);}} title="Nouvelle catégorie"
+          <button type="button" onClick={startAdding} title="Nouvelle catégorie"
             className="flex-shrink-0 w-9 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-50 text-base leading-none">+</button>
         </div>
       ) : (
         <div className="flex gap-1.5">
-          <input autoFocus className={inputCls} value={draft} placeholder="Nouvelle catégorie…"
-            onChange={e=>setDraft(e.target.value)}
-            onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();confirm();} if(e.key==='Escape'){setAdding(false);} }}/>
-          <button type="button" onClick={confirm} title="Ajouter"
+          {/* Liaison DIRECTE au parent : la saisie est immédiatement dans form.categorie, donc
+              même en cliquant « Enregistrer » sans valider, la nouvelle catégorie est conservée. */}
+          <input autoFocus className={inputCls} value={value||''} placeholder="Nouvelle catégorie…"
+            onChange={e=>onChange(e.target.value)}
+            onKeyDown={e=>{ if(e.key==='Enter'){e.preventDefault();setAdding(false);} if(e.key==='Escape'){cancel();} }}/>
+          <button type="button" onClick={()=>setAdding(false)} title="Valider"
             className="flex-shrink-0 w-9 rounded-lg text-white text-sm" style={{background:'var(--brand)'}}>✓</button>
-          <button type="button" onClick={()=>setAdding(false)} title="Annuler"
+          <button type="button" onClick={cancel} title="Annuler"
             className="flex-shrink-0 w-9 rounded-lg border border-gray-300 text-gray-400 hover:bg-gray-50 text-sm">✕</button>
         </div>
       )}
