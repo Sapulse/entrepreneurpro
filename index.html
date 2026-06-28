@@ -763,27 +763,53 @@ function Dashboard({data, onNavigate, setData}) {
   }, [data, periodeId, dateDebut, dateFin]);
 
   // M1 : flux mensuel Entrées/Sorties sur les 12 derniers mois glissants.
-  // Indépendant du filtre de période (un graphe d'évolution n'a de sens que sur la durée).
-  // Lecture seule : réutilise buildLedgerEntries, ne modifie aucun agrégat existant.
-  const fluxMensuel = React.useMemo(() => {
-    const allEntries = buildLedgerEntries(data);
-    const now = new Date();
-    const monthKeys = Array.from({length:12}, (_,i) => {
-      const d = new Date(now.getFullYear(), now.getMonth()-11+i, 1);
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    });
-    const entrees = byMonth(allEntries.filter(e=>e.montant>0), e=>e.date, e=>e.montant, monthKeys);
-    const sorties = byMonth(allEntries.filter(e=>e.montant<0), e=>e.date, e=>Math.abs(e.montant), monthKeys);
-    return {labels: entrees.labels, entrees: entrees.values, sorties: sorties.values};
+  // Évolution annuelle (lecture seule) : CA signé/encaissé + répartition Micka/César sur l'année en cours,
+  // + série année précédente (N-1) pour comparaison — n'apparaît que si des données N-1 existent.
+  // CA signé = contrats par dateDebut (cohérent avec le KPI "CA Signé"). CA encaissé = paiements par date.
+  const caEvolution = React.useMemo(() => {
+    const entries = buildLedgerEntries(data);
+    const contractEntries = entries.filter(e => e.type === 'contract');
+    const nonAnnule = (data.contracts||[]).filter(c => c.statut !== 'Annulé');
+    const year = new Date().getFullYear();
+    const prevYear = year - 1;
+    const monthsOf = (y) => Array.from({length:12}, (_,i)=>`${y}-${String(i+1).padStart(2,'0')}`);
+    const moisCur = monthsOf(year), moisPrev = monthsOf(prevYear);
+
+    const signe    = byMonth(nonAnnule,       c=>c.dateDebut, c=>Number(c.montant)||0, moisCur);
+    const encaisse = byMonth(contractEntries, e=>e.date,      e=>e.montant,            moisCur);
+    const micka    = byMonth(contractEntries.filter(e=>e.assignedTo==='Micka'), e=>e.date, e=>e.montant, moisCur);
+    const cesar    = byMonth(contractEntries.filter(e=>e.assignedTo==='César'), e=>e.date, e=>e.montant, moisCur);
+
+    const signePrev    = byMonth(nonAnnule,       c=>c.dateDebut, c=>Number(c.montant)||0, moisPrev);
+    const encaissePrev = byMonth(contractEntries, e=>e.date,      e=>e.montant,            moisPrev);
+    const hasPrevYear  = signePrev.values.some(v=>v>0) || encaissePrev.values.some(v=>v>0);
+
+    const sum = arr => arr.reduce((s,v)=>s+v,0);
+    const totalSigne = sum(signe.values), totalEncaisse = sum(encaisse.values);
+    const totalEncaissePrev = sum(encaissePrev.values);
+    const deltaEncaisse = (hasPrevYear && totalEncaissePrev>0) ? Math.round((totalEncaisse-totalEncaissePrev)/totalEncaissePrev*100) : null;
+
+    return {labels:signe.labels, signe:signe.values, encaisse:encaisse.values, micka:micka.values, cesar:cesar.values,
+      encaissePrev:encaissePrev.values, hasPrevYear, totalSigne, totalEncaisse, deltaEncaisse, year, prevYear};
   }, [data]);
-  const fluxMensuelChartData = {
-    labels: fluxMensuel.labels,
+
+  const caChartData = {
+    labels: caEvolution.labels,
     datasets: [
-      {label:'Entrées', data:fluxMensuel.entrees, backgroundColor:'#1D9E7599', borderColor:'#1D9E75', borderWidth:1},
-      {label:'Sorties', data:fluxMensuel.sorties, backgroundColor:'#E0654F99', borderColor:'#E0654F', borderWidth:1},
+      {label:'CA signé', type:'bar', data:caEvolution.signe, backgroundColor:'#185FA5aa', borderColor:'#185FA5', borderWidth:1},
+      {label:'CA encaissé', type:'bar', data:caEvolution.encaisse, backgroundColor:'#5DCAA5aa', borderColor:'#5DCAA5', borderWidth:1},
+      ...(caEvolution.hasPrevYear ? [{label:`CA encaissé ${caEvolution.prevYear}`, type:'line', data:caEvolution.encaissePrev, borderColor:'#9CA3AF', borderDash:[5,4], borderWidth:1.5, pointRadius:0, fill:false}] : []),
     ],
   };
-  const fluxMensuelVide = fluxMensuel.entrees.every(v=>v===0) && fluxMensuel.sorties.every(v=>v===0);
+  const duoChartData = {
+    labels: caEvolution.labels,
+    datasets: [
+      {label:'Micka', data:caEvolution.micka, backgroundColor:'#185FA5aa', borderColor:'#185FA5', borderWidth:1},
+      {label:'César', data:caEvolution.cesar, backgroundColor:'#1D9E75aa', borderColor:'#1D9E75', borderWidth:1},
+    ],
+  };
+  const caVide  = caEvolution.signe.every(v=>v===0) && caEvolution.encaisse.every(v=>v===0);
+  const duoVide = caEvolution.micka.every(v=>v===0) && caEvolution.cesar.every(v=>v===0);
 
   // Ordered visible widget list
   const allWidgetIds = DASHBOARD_WIDGETS.map(w=>w.id);
@@ -853,11 +879,34 @@ function Dashboard({data, onNavigate, setData}) {
       ) : null;
       case 'flux': return (
         <DraggableWidget key={id} {...wProps(id)}>
-          <ChartBlock title="Évolution mensuelle (12 derniers mois)" icon="bar-chart">
-            {fluxMensuelVide
-              ? <EmptyState message="Aucun flux sur les 12 derniers mois" icon="bar-chart"/>
-              : <div className="h-64"><ChartCanvas type="bar" data={fluxMensuelChartData} options={{maintainAspectRatio:false}}/></div>}
-          </ChartBlock>
+          <div className="space-y-4">
+            <ChartBlock title={`Évolution du chiffre d'affaires (${caEvolution.year})`} icon="trending-up">
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="rounded-xl p-3" style={{background:'var(--brand-soft)'}}>
+                  <div className="text-xs font-medium leading-snug" style={{color:'var(--brand)'}}>CA signé (année)</div>
+                  <div className="text-[19px] font-medium leading-tight" style={{color:'var(--brand)'}}><Money value={fmt(caEvolution.totalSigne)}/></div>
+                </div>
+                <div className="rounded-xl p-3" style={{background:'var(--money-soft)'}}>
+                  <div className="text-xs font-medium leading-snug" style={{color:'var(--money)'}}>CA encaissé (année)</div>
+                  <div className="text-[19px] font-medium leading-tight" style={{color:'var(--money)'}}><Money value={fmt(caEvolution.totalEncaisse)}/></div>
+                </div>
+                <div className="rounded-xl p-3 bg-gray-50">
+                  <div className="text-xs font-medium leading-snug text-gray-500">vs {caEvolution.prevYear}</div>
+                  <div className="text-[19px] font-medium leading-tight" style={{color: caEvolution.deltaEncaisse==null ? 'var(--text-muted)' : caEvolution.deltaEncaisse>=0 ? 'var(--money)' : '#E0654F'}}>
+                    {caEvolution.deltaEncaisse==null ? '—' : `${caEvolution.deltaEncaisse>=0?'+':''}${caEvolution.deltaEncaisse}%`}
+                  </div>
+                </div>
+              </div>
+              {caVide
+                ? <EmptyState message="Aucune donnée cette année" icon="bar-chart"/>
+                : <div className="h-64"><ChartCanvas type="bar" data={caChartData} options={{maintainAspectRatio:false}}/></div>}
+            </ChartBlock>
+            <ChartBlock title={`Évolution Micka / César (${caEvolution.year})`} icon="users">
+              {duoVide
+                ? <EmptyState message="Aucun encaissement attribué" icon="users"/>
+                : <div className="h-64"><ChartCanvas type="bar" data={duoChartData} options={{maintainAspectRatio:false}}/></div>}
+            </ChartBlock>
+          </div>
         </DraggableWidget>
       );
       case 'tresorerie': return (
