@@ -725,7 +725,7 @@ function Dashboard({data, onNavigate, setData}) {
     const balance = totalEntrees - totalSorties;
 
     const nonAnnule = data.contracts.filter(c => c.statut !== 'Annulé');
-    const caSigne = nonAnnule.filter(c=>inPeriode(c.dateDebut, range)).reduce((s,c) => s + (Number(c.montant)||0), 0);
+    const caSigne = nonAnnule.filter(c=>inPeriode(c.dateSignature||c.dateDebut, range)).reduce((s,c) => s + (Number(c.montant)||0), 0);
     const caEncaisse = filteredEntries.filter(e=>e.type==='contract').reduce((s,e)=>s+e.montant, 0);
     const potentiel = data.clients.filter(cl => cl.etape !== 'Client').reduce((s,cl) => s + (Number(cl.potentiel)||0), 0);
 
@@ -804,12 +804,12 @@ function Dashboard({data, onNavigate, setData}) {
     const monthsOf = (y) => Array.from({length:12}, (_,i)=>`${y}-${String(i+1).padStart(2,'0')}`);
     const moisCur = monthsOf(year), moisPrev = monthsOf(prevYear);
 
-    const signe    = byMonth(nonAnnule,       c=>c.dateDebut, c=>Number(c.montant)||0, moisCur);
+    const signe    = byMonth(nonAnnule,       c=>c.dateSignature||c.dateDebut, c=>Number(c.montant)||0, moisCur);
     const encaisse = byMonth(contractEntries, e=>e.date,      e=>e.montant,            moisCur);
     const micka    = byMonth(contractEntries.filter(e=>e.assignedTo==='Micka'), e=>e.date, e=>e.montant, moisCur);
     const cesar    = byMonth(contractEntries.filter(e=>e.assignedTo==='César'), e=>e.date, e=>e.montant, moisCur);
 
-    const signePrev    = byMonth(nonAnnule,       c=>c.dateDebut, c=>Number(c.montant)||0, moisPrev);
+    const signePrev    = byMonth(nonAnnule,       c=>c.dateSignature||c.dateDebut, c=>Number(c.montant)||0, moisPrev);
     const encaissePrev = byMonth(contractEntries, e=>e.date,      e=>e.montant,            moisPrev);
     const hasPrevYear  = signePrev.values.some(v=>v>0) || encaissePrev.values.some(v=>v>0);
 
@@ -4227,7 +4227,7 @@ function PilotageModule({data}) {
 
     // === BLOC 1 – Activité ===
     const nonAnnule = data.contracts.filter(c => c.statut !== 'Annulé');
-    const contratsSignesPeriode = nonAnnule.filter(c => inPeriode(c.dateDebut, range));
+    const contratsSignesPeriode = nonAnnule.filter(c => inPeriode(c.dateSignature||c.dateDebut, range));
     const caSigne = contratsSignesPeriode.reduce((s, c) => s + (Number(c.montant)||0), 0);
     const caEncaisse = filtered.filter(e => e.type === 'contract').reduce((s, e) => s + e.montant, 0);
     const nbContrats = contratsSignesPeriode.length;
@@ -4245,9 +4245,9 @@ function PilotageModule({data}) {
     const nbClients = data.clients.filter(cl => cl.etape === 'Client').length;
     const tauxTransfo = totalCRM > 0 ? Math.round((nbClients / totalCRM) * 100) : 0;
 
-    const prevCaSigne = prevRange ? nonAnnule.filter(c => inPeriode(c.dateDebut, prevRange)).reduce((s,c)=>s+(Number(c.montant)||0),0) : null;
+    const prevCaSigne = prevRange ? nonAnnule.filter(c => inPeriode(c.dateSignature||c.dateDebut, prevRange)).reduce((s,c)=>s+(Number(c.montant)||0),0) : null;
     const prevCaEncaisse = prevFiltered.filter(e => e.type === 'contract').reduce((s,e)=>s+e.montant,0);
-    const prevNbContrats = prevRange ? nonAnnule.filter(c => inPeriode(c.dateDebut, prevRange)).length : null;
+    const prevNbContrats = prevRange ? nonAnnule.filter(c => inPeriode(c.dateSignature||c.dateDebut, prevRange)).length : null;
     const prevPanierMoyen = (prevNbContrats > 0 && prevCaSigne !== null) ? prevCaSigne / prevNbContrats : null;
 
     // === BLOC 2 – Rentabilité ===
