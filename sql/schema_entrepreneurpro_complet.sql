@@ -58,6 +58,10 @@ CREATE TABLE IF NOT EXISTS clients (
   potentiel   INTEGER DEFAULT 0,        -- app: potentiel (€ estimé)
   notes       TEXT DEFAULT '',
   date_entree DATE,                     -- app: dateEntree
+  prenom         TEXT DEFAULT '',       -- app: prenom
+  adresse        TEXT DEFAULT '',       -- app: adresse
+  siret          TEXT DEFAULT '',       -- app: siret
+  recommande_par TEXT DEFAULT '',       -- app: recommandePar
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );

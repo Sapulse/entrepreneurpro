@@ -48,6 +48,10 @@ async function syncClientsToTable(clients) {
       potentiel:   typeof c.potentiel === 'number' ? c.potentiel : (c.crmScore || c.crm_score || 0),
       notes:       c.notes       || '',
       date_entree: c.dateEntree  || c.date_entree || null,
+      prenom:        c.prenom        || '',
+      adresse:       c.adresse       || '',
+      siret:         c.siret         || '',
+      recommande_par: c.recommandePar || c.recommande_par || '',
     }));
     const { error } = await sb.from('clients').upsert(rows);
     if(error) {
@@ -455,6 +459,10 @@ async function loadFromEntityTables() {
       potentiel:  r.potentiel   || 0,
       notes:      r.notes       || '',
       dateEntree: r.date_entree || null,
+      prenom:        r.prenom         || '',
+      adresse:       r.adresse        || '',
+      siret:         r.siret          || '',
+      recommandePar: r.recommande_par || '',
       actions: (actionRows || [])
         .filter(a => a.client_id === r.id)
         .map(a => ({
