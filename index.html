@@ -3143,7 +3143,10 @@ function ExpenseModal({open, onClose, expense, onSave, onDelete, categories=[]})
   React.useEffect(() => {
     if(open) {
       if(expense) setForm({...expense});
-      else setForm({id:null,titre:'',montant:'',categorie:'Autre',payePar:'Micka',date:todayStr(),refacturable:false,notes:''});
+      // categorie vide au départ : un <input list> pré-rempli filtrerait le datalist à
+      // la seule valeur courante (ex. « Autre »). Vide → toute la liste est proposée au clic.
+      // handleSave retombe sur « Autre » si le champ reste vide.
+      else setForm({id:null,titre:'',montant:'',categorie:'',payePar:'Micka',date:todayStr(),refacturable:false,notes:''});
     }
   }, [open, expense]);
 
@@ -3233,7 +3236,8 @@ function SubModal({open, onClose, sub, onSave, onDelete, categories=[]}) {
   React.useEffect(() => {
     if(open) {
       if(sub) setForm({...sub, paidBy:sub.paidBy||'Système', imputéÀ:sub.imputéÀ||'Commun'});
-      else setForm({id:null,name:'',amount:'',day:1,category:'Logiciels',active:true,paidBy:'Système',imputéÀ:'Commun'});
+      // category vide au départ (même raison que les dépenses) — handleSave retombe sur « Logiciels ».
+      else setForm({id:null,name:'',amount:'',day:1,category:'',active:true,paidBy:'Système',imputéÀ:'Commun'});
     }
   }, [open, sub]);
 
