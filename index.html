@@ -863,15 +863,15 @@ function Dashboard({data, onNavigate, setData}) {
       case 'tresorerie': return (
         <DraggableWidget key={id} {...wProps(id)}>
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5">
-            <CardHead icon="wallet" color="blue">Trésorerie réelle / projetée</CardHead>
+            <CardHead icon="wallet" color="blue">Flux net de trésorerie</CardHead>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="rounded-xl p-4" style={{background:'var(--brand-soft)'}}>
-                <div className="text-xs font-medium mb-1" style={{color:'var(--brand)'}}>Réelle (flux encaissés)</div>
+                <div className="text-xs font-medium mb-1" style={{color:'var(--brand)'}}>Flux net encaissé</div>
                 <div className="text-[22px] font-medium" style={{color:'var(--brand)'}}><Money value={fmt(stats.tresoReelle)}/></div>
-                <div className="text-xs mt-1" style={{color:'var(--text-muted)'}}>Basée sur les mouvements réels</div>
+                <div className="text-xs mt-1" style={{color:'var(--text-muted)'}}>sur la période</div>
               </div>
               <div className="rounded-xl p-4" style={{background:'var(--money-soft)'}}>
-                <div className="text-xs font-medium mb-1" style={{color:'var(--money)'}}>Projetée (+ reste à encaisser)</div>
+                <div className="text-xs font-medium mb-1" style={{color:'var(--money)'}}>Flux net projeté</div>
                 <div className="text-[22px] font-medium" style={{color:'var(--money)'}}><Money value={fmt(stats.tresoProjetee)}/></div>
                 <div className="text-xs mt-1" style={{color:'var(--text-muted)'}}>+ {fmt(stats.resteTotal)} attendus</div>
               </div>
@@ -4500,8 +4500,8 @@ function PilotageModule({data}) {
       {/* BLOC 3 – Trésorerie */}
       <Section icon="wallet" title="Trésorerie" subtitle="Synthèse — détail complet dans l'onglet Trésorerie">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <KpiBox label="Trésorerie réelle" value={fmtE(stats.tresoReelle)} curr={stats.tresoReelle} prev={stats.prevTresoReelle} color={stats.tresoReelle >= 0 ? 'green' : 'red'}/>
-          <KpiBox label="Trésorerie projetée" value={fmtE(stats.tresoProjetee)} color={stats.tresoProjetee >= 0 ? 'blue' : 'amber'}/>
+          <KpiBox label="Flux net encaissé" value={fmtE(stats.tresoReelle)} curr={stats.tresoReelle} prev={stats.prevTresoReelle} color={stats.tresoReelle >= 0 ? 'green' : 'red'}/>
+          <KpiBox label="Flux net projeté" value={fmtE(stats.tresoProjetee)} color={stats.tresoProjetee >= 0 ? 'blue' : 'amber'}/>
           <KpiBox label="Reste à encaisser" value={fmtE(stats.resteTotal)} color="amber"/>
           <KpiBox label="Apports" value={fmtE(stats.apports)} color="purple"/>
         </div>
