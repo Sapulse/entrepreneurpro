@@ -2313,11 +2313,21 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
     persistList({contacts:list}); setContactDraft(null); addToast('Contact enregistré','success');
   };
   const deleteContact = (id) => { persistList({contacts:(form.contacts||[]).filter(c=>c.id!==id)}); addToast('Contact supprimé','success'); };
+  // Garde-fou URL : n'autorise que http(s). Sans schéma → préfixe https:// ;
+  // tout autre schéma (javascript:, data:…) → rejeté (chaîne vide).
+  const sanitizeUrl = (raw) => {
+    const u = (raw||'').trim();
+    if(!u) return '';
+    if(/^https?:\/\//i.test(u)) return u;
+    if(/^[a-z][a-z0-9+.-]*:/i.test(u)) return '';      // autre schéma → bloqué
+    return 'https://' + u;
+  };
   const saveLien = () => {
     const label = (lienDraft.label||'').trim();
-    let url = (lienDraft.url||'').trim();
-    if(!label && !url) { addToast('Label ou URL requis','error'); return; }
-    if(url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+    const raw = (lienDraft.url||'').trim();
+    if(!label && !raw) { addToast('Label ou URL requis','error'); return; }
+    const url = sanitizeUrl(raw);
+    if(raw && !url) { addToast('URL invalide — seuls http:// et https:// sont autorisés','error'); return; }
     const d = {...lienDraft, label: label || url, url};
     const cur = form.liens||[];
     const list = cur.some(l=>l.id===d.id) ? cur.map(l=>l.id===d.id?d:l) : [...cur, d];
@@ -2542,9 +2552,15 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
             (form.liens||[]).map(l => (
               lienDraft && lienDraft.id===l.id ? <div key={l.id}>{renderLienEditor()}</div> : (
                 <div key={l.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
-                  <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline truncate flex items-center gap-1.5 min-w-0">
-                    <Icon name="link" size={13}/><span className="truncate">{l.label||l.url}</span>
-                  </a>
+                  {/^https?:\/\//i.test(l.url||'') ? (
+                    <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline truncate flex items-center gap-1.5 min-w-0">
+                      <Icon name="link" size={13}/><span className="truncate">{l.label||l.url}</span>
+                    </a>
+                  ) : (
+                    <span className="text-sm font-medium text-gray-500 truncate flex items-center gap-1.5 min-w-0" title="Lien non sécurisé — désactivé">
+                      <Icon name="link" size={13}/><span className="truncate">{l.label||l.url||'—'}</span>
+                    </span>
+                  )}
                   <div className="flex gap-1.5 flex-shrink-0 ml-2">
                     <button onClick={()=>setLienDraft({...l})} className="text-gray-300 hover:text-[var(--brand)]"><Icon name="pen-line" size={13}/></button>
                     <button onClick={()=>deleteLien(l.id)} className="text-gray-300 hover:text-red-400 text-sm leading-none">✕</button>
