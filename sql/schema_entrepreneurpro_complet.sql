@@ -247,6 +247,43 @@ CREATE TRIGGER trg_invoices_updated_at
   BEFORE UPDATE ON invoices FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ============================================================================
+-- 7d. RECURRING_REVENUES — abonnements clients (montant fixe mensuel)
+-- 7e. RECURRING_OCCURRENCES — échéancier attendu→encaissé (1 ligne / abo / mois)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS recurring_revenues (
+  id           TEXT PRIMARY KEY,
+  client_id    TEXT REFERENCES clients(id) ON DELETE SET NULL,
+  client_name  TEXT DEFAULT '',          -- dénormalisé (app: client)
+  label        TEXT DEFAULT '',          -- prestation / intitulé
+  montant      NUMERIC DEFAULT 0,        -- montant fixe mensuel
+  jour         INTEGER DEFAULT 1,        -- jour d'échéance (1-31)
+  assigned_to  TEXT DEFAULT '',          -- bénéficiaire : Micka | César
+  actif        BOOLEAN DEFAULT TRUE,
+  date_debut   DATE,
+  notes        TEXT DEFAULT '',
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS recurring_occurrences (
+  id                TEXT PRIMARY KEY,
+  recurring_id      TEXT REFERENCES recurring_revenues(id) ON DELETE CASCADE,
+  client_id         TEXT,                -- dénormalisé (résilient si abo supprimé)
+  client_name       TEXT DEFAULT '',
+  label             TEXT DEFAULT '',
+  montant           NUMERIC DEFAULT 0,
+  mois              TEXT DEFAULT '',     -- 'YYYY-MM' (clé d'idempotence)
+  assigned_to       TEXT DEFAULT '',
+  statut            TEXT DEFAULT 'attendu',   -- 'attendu' | 'encaissé'
+  date_encaissement DATE,               -- date réelle saisie au paiement
+  notes             TEXT DEFAULT '',
+  created_at        TIMESTAMPTZ DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_recocc_recurring ON recurring_occurrences(recurring_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_recocc_rec_mois ON recurring_occurrences(recurring_id, mois);
+
+-- ============================================================================
 -- 8. APP_CONFIG — configuration unique (id=1)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS app_config (

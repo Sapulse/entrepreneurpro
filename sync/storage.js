@@ -16,6 +16,8 @@ const INITIAL_DATA = {
   quotes: [],
   invoices: [],
   parcours: [],
+  recurringRevenues: [],
+  recurringOccurrences: [],
   bank: { initialBalance: 0, transactions: [], subscriptions: [] },
   config: {
     driveLinks: {},
@@ -36,6 +38,8 @@ function securizeData(d) {
   if(!Array.isArray(d.quotes)) d.quotes = [];
   if(!Array.isArray(d.invoices)) d.invoices = [];
   if(!Array.isArray(d.parcours)) d.parcours = [];
+  if(!Array.isArray(d.recurringRevenues)) d.recurringRevenues = [];
+  if(!Array.isArray(d.recurringOccurrences)) d.recurringOccurrences = [];
   if(!d.bank) d.bank = {initialBalance:0, transactions:[], subscriptions:[]};
   if(typeof d.bank.initialBalance !== 'number') d.bank.initialBalance = 0;
   if(!Array.isArray(d.bank.transactions)) d.bank.transactions = [];
@@ -102,6 +106,8 @@ function saveData(d) {
       typeof syncQuotesToTable        === 'function' ? syncQuotesToTable(d.quotes                || []) : null,
       typeof syncInvoicesToTable      === 'function' ? syncInvoicesToTable(d.invoices            || []) : null,
       typeof syncParcoursToTable      === 'function' ? syncParcoursToTable(d.parcours            || []) : null,
+      typeof syncRecurringToTable     === 'function' ? syncRecurringToTable(d.recurringRevenues   || []) : null,
+      typeof syncRecurringOccurrencesToTable === 'function' ? syncRecurringOccurrencesToTable(d.recurringOccurrences || []) : null,
       typeof syncConfigToTable        === 'function' ? syncConfigToTable(d.config, d.bank)            : null,
     ].filter(Boolean);
     await Promise.allSettled(entityFns);

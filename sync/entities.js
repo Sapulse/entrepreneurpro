@@ -428,6 +428,69 @@ async function syncParcoursToTable(parcours) {
 }
 
 // ------------------------------------------------------------------
+// recurring_revenues — abonnements clients (montant fixe mensuel)
+// Mapping app { id, clientId, client, label, montant, jour, assignedTo,
+//               actif, dateDebut, notes }
+//   → SQL { id, client_id, client_name, label, montant, jour, assigned_to,
+//           actif, date_debut, notes }
+// ------------------------------------------------------------------
+async function syncRecurringToTable(list) {
+  if(!Array.isArray(list)) return;
+  try {
+    const currentIds = list.map(r => r.id);
+    await _deleteOrphans('recurring_revenues', currentIds);
+    if(list.length === 0) { addSyncLog('ENTITY_OK', 'recurring_revenues ×0'); return; }
+    const rows = list.map(r => ({
+      id:          r.id,
+      client_id:   r.clientId   || r.client_id   || null,
+      client_name: r.client     || r.client_name || '',
+      label:       r.label      || '',
+      montant:     toNum(r.montant),
+      jour:        toNum(r.jour) || 1,
+      assigned_to: r.assignedTo || r.assigned_to || '',
+      actif:       r.actif !== undefined ? Boolean(r.actif) : true,
+      date_debut:  r.dateDebut  || r.date_debut  || null,
+      notes:       r.notes      || '',
+    }));
+    const { error } = await sb.from('recurring_revenues').upsert(rows);
+    if(error) { console.warn('[ENTITIES] recurring_revenues:', error.message); addSyncLog('ENTITY_ERR', `recurring_revenues: ${error.code} ${error.message}`); }
+    else { addSyncLog('ENTITY_OK', `recurring_revenues ×${rows.length}`); }
+  } catch(e) { console.warn('[ENTITIES] recurring_revenues exception:', e.message); }
+}
+
+// ------------------------------------------------------------------
+// recurring_occurrences — échéancier attendu→encaissé
+// Mapping app { id, recurringId, clientId, client, label, montant, mois,
+//               assignedTo, statut, dateEncaissement, notes }
+//   → SQL { id, recurring_id, client_id, client_name, label, montant, mois,
+//           assigned_to, statut, date_encaissement, notes }
+// ------------------------------------------------------------------
+async function syncRecurringOccurrencesToTable(list) {
+  if(!Array.isArray(list)) return;
+  try {
+    const currentIds = list.map(o => o.id);
+    await _deleteOrphans('recurring_occurrences', currentIds);
+    if(list.length === 0) { addSyncLog('ENTITY_OK', 'recurring_occurrences ×0'); return; }
+    const rows = list.map(o => ({
+      id:                o.id,
+      recurring_id:      o.recurringId      || o.recurring_id      || null,
+      client_id:         o.clientId         || o.client_id         || null,
+      client_name:       o.client           || o.client_name       || '',
+      label:             o.label            || '',
+      montant:           toNum(o.montant),
+      mois:              o.mois             || '',
+      assigned_to:       o.assignedTo       || o.assigned_to       || '',
+      statut:            o.statut           || 'attendu',
+      date_encaissement: o.dateEncaissement || o.date_encaissement || null,
+      notes:             o.notes            || '',
+    }));
+    const { error } = await sb.from('recurring_occurrences').upsert(rows);
+    if(error) { console.warn('[ENTITIES] recurring_occurrences:', error.message); addSyncLog('ENTITY_ERR', `recurring_occurrences: ${error.code} ${error.message}`); }
+    else { addSyncLog('ENTITY_OK', `recurring_occurrences ×${rows.length}`); }
+  } catch(e) { console.warn('[ENTITIES] recurring_occurrences exception:', e.message); }
+}
+
+// ------------------------------------------------------------------
 // Phase B — Lecture depuis les tables entité au montage
 // Retourne l'objet data complet (même structure que app_data.data)
 // Retourne null si les tables sont vides ou inaccessibles → fallback app_data
@@ -447,6 +510,8 @@ async function loadFromEntityTables() {
       { data: configRow,    error: e10 },
       { data: actionRows },
       { data: parcoursRows },
+      { data: recurringRows },
+      { data: occurrenceRows },
     ] = await Promise.all([
       sb.from('clients').select('*'),
       sb.from('contracts').select('*'),
@@ -460,6 +525,8 @@ async function loadFromEntityTables() {
       sb.from('app_config').select('*').eq('id', 1).single(),
       sb.from('crm_actions').select('*'),
       sb.from('parcours').select('*'),
+      sb.from('recurring_revenues').select('*'),
+      sb.from('recurring_occurrences').select('*'),
     ]);
 
     // Tables critiques inaccessibles → fallback app_data
@@ -627,6 +694,35 @@ async function loadFromEntityTables() {
       }
     );
 
+    // recurring_revenues : SQL → app (toNum sur montant)
+    const recurringRevenues = (recurringRows || []).map(r => ({
+      id:         r.id,
+      clientId:   r.client_id    || null,
+      client:     r.client_name  || '',
+      label:      r.label        || '',
+      montant:    toNum(r.montant),
+      jour:       toNum(r.jour) || 1,
+      assignedTo: r.assigned_to  || '',
+      actif:      r.actif !== undefined ? !!r.actif : true,
+      dateDebut:  r.date_debut   || null,
+      notes:      r.notes        || '',
+    }));
+
+    // recurring_occurrences : SQL → app (toNum sur montant)
+    const recurringOccurrences = (occurrenceRows || []).map(o => ({
+      id:               o.id,
+      recurringId:      o.recurring_id      || null,
+      clientId:         o.client_id         || null,
+      client:           o.client_name       || '',
+      label:            o.label             || '',
+      montant:          toNum(o.montant),
+      mois:             o.mois              || '',
+      assignedTo:       o.assigned_to       || '',
+      statut:           o.statut            || 'attendu',
+      dateEncaissement: o.date_encaissement || null,
+      notes:            o.notes             || '',
+    }));
+
     // app_config → config + bank.initialBalance
     const cfg = configRow || {};
     const config = {
@@ -652,6 +748,8 @@ async function loadFromEntityTables() {
       quotes,
       invoices,
       parcours,
+      recurringRevenues,
+      recurringOccurrences,
       bank: {
         initialBalance: cfg.initial_balance || 0,
         transactions,
