@@ -2647,8 +2647,8 @@ function EntrepriseSearch({ onSelect }) {
 
 function NewClientModal({open, onClose, setData}) {
   const addToast = useToast();
-  const [newForm, setNewForm] = React.useState({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:''});
-  React.useEffect(() => { if(open) setNewForm({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:''}); }, [open]);
+  const [newForm, setNewForm] = React.useState({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:'',contacts:[],liens:[]});
+  React.useEffect(() => { if(open) setNewForm({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:'',contacts:[],liens:[]}); }, [open]);
   const handleCreate = () => {
     if(!newForm.entreprise.trim()||!newForm.nom.trim()) { addToast('Entreprise et nom requis','error'); return; }
     const nc = {...newForm, id:genId(), potentiel:Number(newForm.potentiel)||0, dateEntree:newForm.dateEntree||todayStr()};

@@ -72,9 +72,11 @@ async function syncClientsToTable(clients) {
       adresse:       c.adresse       || '',
       siret:         c.siret         || '',
       recommande_par: c.recommandePar || c.recommande_par || '',
-      // Listes JSONB — array JS passé tel quel (_apiFetch stringifie déjà le body)
-      contacts:      Array.isArray(c.contacts) ? c.contacts : [],
-      liens:         Array.isArray(c.liens)    ? c.liens    : [],
+      // Listes JSONB — sérialisées en JSON STRING : un array JS passé tel quel serait
+      // converti par node-postgres en littéral de tableau Postgres '{}' (→ jsonb objet vide),
+      // pas en JSON. Une string '[...]' est liée en texte → '[...]'::jsonb = vrai array.
+      contacts:      JSON.stringify(Array.isArray(c.contacts) ? c.contacts : []),
+      liens:         JSON.stringify(Array.isArray(c.liens)    ? c.liens    : []),
     }));
     const { error } = await sb.from('clients').upsert(rows);
     if(error) {
