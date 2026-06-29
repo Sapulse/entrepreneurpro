@@ -1193,6 +1193,23 @@ function Dashboard({data, onNavigate, setData}) {
           </button>
         </div>
       </div>
+      {/* Bandeau échéances récurrentes à générer ce mois */}
+      {(() => {
+        const mk = currentMonthKey();
+        const nb = recurringToGenerate(data, mk).length;
+        if(nb === 0) return null;
+        const gen = () => {
+          const newOccs = recurringToGenerate(data, mk).map(r => makeOccurrence(r, mk));
+          setData(d => ({...d, recurringOccurrences:[...(d.recurringOccurrences||[]), ...newOccs]}));
+        };
+        return (
+          <div className="bg-[var(--brand-soft)] border border-[var(--border)] rounded-[var(--radius)] p-4 flex flex-wrap items-center gap-3">
+            <span className="flex-shrink-0 text-lg">📅</span>
+            <span className="text-sm font-medium text-slate-700">{nb} échéance{nb>1?'s':''} récurrente{nb>1?'s':''} à générer pour {formatMois(mk)}</span>
+            <div className="ml-auto"><Btn size="sm" variant="primary" onClick={gen}>Générer</Btn></div>
+          </div>
+        );
+      })()}
       {orderedWidgets.map(id => renderWidget(id)).filter(Boolean)}
       <QuickPaymentModal open={payModalOpen} onClose={()=>setPayModalOpen(false)} data={data} setData={setData}/>
       <NewClientModal open={newClientOpen} onClose={()=>setNewClientOpen(false)} setData={setData}/>
@@ -4709,7 +4726,13 @@ function PilotageModule({data, onNavigate}) {
     const encaisseAnneePrev = entries.filter(e => e.type === 'contract' && e.date && +e.date.slice(0,4) === (evoYear - 1)).reduce((s, e) => s + e.montant, 0);
     const evolutionEncaisseAnnee = encaisseAnneePrev > 0 ? Math.round(((encaisseAnnee - encaisseAnneePrev) / encaisseAnneePrev) * 100) : null;
 
+    // === MRR – revenus récurrents (somme des abonnements actifs) ===
+    const mrrActifs = (data.recurringRevenues || []).filter(s => s.actif);
+    const mrr = mrrActifs.reduce((s, r) => s + (Number(r.montant)||0), 0);
+    const mrrCount = mrrActifs.length;
+
     return {
+      mrr, mrrCount,
       caSigne, caEncaisse, resteTotal, nbContrats, panierMoyen, tauxTransfo, nbClients, totalCRM,
       prevCaSigne, prevCaEncaisse, prevNbContrats, prevPanierMoyen,
       totalDepenses, margeBrute, tauxMarge, margeParContrat, topClient, partTopClient, top3, caParClient,
@@ -5065,6 +5088,7 @@ function PilotageModule({data, onNavigate}) {
           <KpiBox label="Pipeline prospects" value={String(stats.pipeline)} sub={`Potentiel ${fmtE(stats.potentielPipeline)}`} color="purple"/>
           <KpiBox label="Évolution CA encaissé" value={stats.evolutionEncaisseAnnee !== null ? `${stats.evolutionEncaisseAnnee > 0 ? '+' : ''}${stats.evolutionEncaisseAnnee}%` : '—'} sub={stats.evolutionEncaisseAnnee !== null ? `${stats.evoYear} vs ${stats.evoYear - 1}` : `Pas de données ${stats.evoYear - 1}`} color={stats.evolutionEncaisseAnnee === null ? 'gray' : stats.evolutionEncaisseAnnee >= 0 ? 'green' : 'red'}/>
           <KpiBox label="Panier moyen" value={fmtE(stats.panierMoyen)} curr={stats.panierMoyen} prev={stats.prevPanierMoyen} sub="vs période précédente" color={stats.evolutionPanier === null ? 'gray' : stats.evolutionPanier >= 0 ? 'indigo' : 'amber'}/>
+          <KpiBox label="Revenus récurrents (MRR)" value={fmtE(stats.mrr)} sub={`${stats.mrrCount} abonnement${stats.mrrCount > 1 ? 's' : ''} actif${stats.mrrCount > 1 ? 's' : ''}`} color="green"/>
         </div>
         {/* Objectifs annuels */}
         {stats.objTotal > 0 && (
@@ -5135,6 +5159,193 @@ function PilotageModule({data, onNavigate}) {
 }
 
 // ============================================================
+// REVENUS RÉCURRENTS (MRR) — abonnements clients + échéancier
+// ============================================================
+// Abonnements actifs sans occurrence pour le mois donné → à générer (idempotence).
+function recurringToGenerate(data, monthKey) {
+  const occ = data.recurringOccurrences || [];
+  return (data.recurringRevenues || []).filter(r => r.actif)
+    .filter(r => !occ.some(o => o.recurringId === r.id && o.mois === monthKey));
+}
+function makeOccurrence(r, monthKey) {
+  return {id:genId(), recurringId:r.id, clientId:r.clientId||null, client:r.client||'', label:r.label||'',
+    montant:Number(r.montant)||0, mois:monthKey, assignedTo:r.assignedTo||'', statut:'attendu', dateEncaissement:null, notes:''};
+}
+
+function RecurringModal({open, onClose, sub, clients, onSave, onDelete}) {
+  const [form, setForm] = React.useState({});
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const addToast = useToast();
+  React.useEffect(() => {
+    if(open) {
+      if(sub) setForm({...sub});
+      else setForm({id:null, clientId:'', client:'', label:'', montant:'', jour:1, assignedTo:'Micka', actif:true, dateDebut:todayStr(), notes:''});
+    }
+  }, [open, sub]);
+  const handleSave = () => {
+    if(!form.client && !form.clientId) { addToast('Client requis','error'); return; }
+    if(!form.montant || isNaN(Number(form.montant))) { addToast('Montant invalide','error'); return; }
+    onSave({...form, montant:Number(form.montant)||0, jour:Math.min(31, Math.max(1, Number(form.jour)||1))});
+    onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} title={form.id?"Modifier l'abonnement":'Nouvel abonnement'} size="sm">
+      <div className="space-y-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Client *</label>
+          <select className={selectCls} value={form.clientId||''} onChange={e=>{const cl=(clients||[]).find(c=>c.id===e.target.value); setForm(f=>({...f, clientId:e.target.value, client: cl?cl.entreprise:f.client}));}}>
+            <option value="">— Choisir un client —</option>
+            {(clients||[]).map(c=><option key={c.id} value={c.id}>{c.entreprise}</option>)}
+          </select>
+        </div>
+        <div><label className="block text-xs font-medium text-gray-600 mb-1">Prestation / intitulé</label><input className={inputCls} value={form.label||''} onChange={e=>setForm(f=>({...f,label:e.target.value}))} placeholder="Ex : Maintenance mensuelle"/></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Montant (€/mois) *</label><input className={inputCls} type="number" step="0.01" value={form.montant||''} onChange={e=>setForm(f=>({...f,montant:e.target.value}))} placeholder="0"/></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Jour d'échéance (1-31)</label><input className={inputCls} type="number" min={1} max={31} value={form.jour||1} onChange={e=>setForm(f=>({...f,jour:e.target.value}))}/></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Bénéficiaire</label><select className={selectCls} value={form.assignedTo||'Micka'} onChange={e=>setForm(f=>({...f,assignedTo:e.target.value}))}>{ASSIGNEES.map(a=><option key={a}>{a}</option>)}</select></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Date de début</label><input className={inputCls} type="date" value={form.dateDebut||''} onChange={e=>setForm(f=>({...f,dateDebut:e.target.value}))}/></div>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-gray-600">
+          <input type="checkbox" checked={!!form.actif} onChange={e=>setForm(f=>({...f,actif:e.target.checked}))} className="rounded"/> Actif
+        </label>
+        <div><label className="block text-xs font-medium text-gray-600 mb-1">Notes</label><textarea className={textareaCls} rows={2} value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
+        <div className="flex justify-between pt-2">
+          {form.id && <Btn variant="danger" size="sm" onClick={()=>setConfirmDelete(true)}>Supprimer</Btn>}
+          <div className="flex gap-2 ml-auto">
+            <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleSave}>Enregistrer</Btn>
+          </div>
+        </div>
+      </div>
+      <ConfirmModal open={confirmDelete} onClose={()=>setConfirmDelete(false)} onConfirm={()=>{onDelete(form.id);onClose();}} title="Supprimer l'abonnement" message="Les échéances liées seront aussi supprimées. Confirmer ?"/>
+    </Modal>
+  );
+}
+
+function RecurringModule({data, setData}) {
+  const addToast = useToast();
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [selected, setSelected] = React.useState(null);
+  const [payDraft, setPayDraft] = React.useState(null); // {id, date}
+
+  const subs = data.recurringRevenues || [];
+  const monthKey = currentMonthKey();
+  const monthOccs = (data.recurringOccurrences || []).filter(o => o.mois === monthKey)
+    .sort((a,b) => (a.statut===b.statut ? 0 : a.statut==='attendu' ? -1 : 1));
+  const nbAGenerer = recurringToGenerate(data, monthKey).length;
+  const mrr = subs.filter(s => s.actif).reduce((s,r) => s + (Number(r.montant)||0), 0);
+  const nbActifs = subs.filter(s => s.actif).length;
+
+  const saveSub = (form) => {
+    if(form.id) { setData(d=>({...d, recurringRevenues:(d.recurringRevenues||[]).map(r=>r.id===form.id?form:r)})); addToast('Abonnement mis à jour','success'); }
+    else { setData(d=>({...d, recurringRevenues:[...(d.recurringRevenues||[]), {...form, id:genId()}]})); addToast('Abonnement créé','success'); }
+  };
+  const deleteSub = (id) => {
+    setData(d=>({...d, recurringRevenues:(d.recurringRevenues||[]).filter(r=>r.id!==id), recurringOccurrences:(d.recurringOccurrences||[]).filter(o=>o.recurringId!==id)}));
+    addToast('Abonnement supprimé','success');
+  };
+  const generate = () => {
+    const toGen = recurringToGenerate(data, monthKey);
+    if(toGen.length === 0) { addToast('Échéances du mois déjà générées','info'); return; }
+    const newOccs = toGen.map(r => makeOccurrence(r, monthKey));
+    setData(d=>({...d, recurringOccurrences:[...(d.recurringOccurrences||[]), ...newOccs]}));
+    addToast(`${newOccs.length} échéance(s) générée(s)`,'success');
+  };
+  const confirmPay = () => {
+    const {id, date} = payDraft;
+    setData(d=>({...d, recurringOccurrences:(d.recurringOccurrences||[]).map(o=>o.id===id?{...o, statut:'encaissé', dateEncaissement:date||todayStr()}:o)}));
+    setPayDraft(null); addToast('Paiement validé','success');
+  };
+  const StatutBadge = ({statut}) => (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statut==='encaissé'?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}`}>{statut==='encaissé'?'Encaissé':'Attendu'}</span>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-end justify-between flex-wrap gap-2">
+        <h1 className="text-[21px] font-medium" style={{color:'var(--text-strong)'}}>Revenus récurrents</h1>
+        <Btn variant="primary" onClick={()=>{setSelected(null);setModalOpen(true);}}>+ Nouvel abonnement</Btn>
+      </div>
+
+      {/* MRR */}
+      <div className="rounded-[var(--radius)] border p-5" style={{background:'var(--money-soft)', borderColor:'var(--money-soft)'}}>
+        <div className="flex items-center gap-2 mb-1" style={{color:'var(--money)'}}>
+          <Icon name="refresh-cw" size={18}/><span className="text-xs font-semibold uppercase tracking-wide">Revenu mensuel récurrent (MRR)</span>
+        </div>
+        <div className="text-3xl font-bold" style={{color:'var(--money)'}}>{fmt(mrr)}</div>
+        <div className="text-xs mt-1" style={{color:'var(--text-muted)'}}>{nbActifs} abonnement{nbActifs>1?'s':''} actif{nbActifs>1?'s':''}</div>
+      </div>
+
+      {/* Abonnements */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5">
+        <CardHead icon="users" color="blue">Abonnements</CardHead>
+        {subs.length===0 ? <EmptyState message="Aucun abonnement" icon="refresh-cw"/> : (
+          <div className="space-y-2">
+            {subs.map(s => (
+              <div key={s.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-gray-800">{s.client||'—'}{s.label && <span className="text-gray-400 font-normal"> · {s.label}</span>}</div>
+                  <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="font-semibold" style={{color:'var(--money)'}}>{fmt(Number(s.montant)||0)}/mois</span>
+                    <span>· le {Number(s.jour)||1}</span>
+                    <StatusBadge status={s.assignedTo}/>
+                    {!s.actif && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-500">Inactif</span>}
+                  </div>
+                </div>
+                <div className="flex gap-1.5 flex-shrink-0 ml-2">
+                  <button onClick={()=>{setSelected(s);setModalOpen(true);}} className="text-gray-300 hover:text-[var(--brand)]"><Icon name="pen-line" size={14}/></button>
+                  <button onClick={()=>deleteSub(s.id)} className="text-gray-300 hover:text-red-400 text-sm leading-none">✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Échéancier du mois */}
+      <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius)] p-5">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <CardHead icon="calendar" color="amber">Échéances de {formatMois(monthKey)}</CardHead>
+          <Btn size="sm" variant="success" onClick={generate}>Générer les échéances du mois{nbAGenerer>0?` (${nbAGenerer})`:''}</Btn>
+        </div>
+        {monthOccs.length===0 ? <EmptyState message="Aucune échéance ce mois — clique sur « Générer »" icon="calendar"/> : (
+          <div className="space-y-2">
+            {monthOccs.map(o => (
+              <div key={o.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-800">{o.client||'—'}{o.label && <span className="text-gray-400 font-normal"> · {o.label}</span>}</div>
+                    <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className="font-semibold" style={{color:'var(--money)'}}>{fmt(Number(o.montant)||0)}</span>
+                      <StatusBadge status={o.assignedTo}/>
+                      <StatutBadge statut={o.statut}/>
+                      {o.statut==='encaissé' && o.dateEncaissement && <span className="text-gray-400">le {formatDate(o.dateEncaissement)}</span>}
+                    </div>
+                  </div>
+                  {o.statut==='attendu' && payDraft?.id!==o.id && (
+                    <Btn size="sm" variant="outline" onClick={()=>setPayDraft({id:o.id, date:todayStr()})}>Valider le paiement</Btn>
+                  )}
+                </div>
+                {payDraft?.id===o.id && (
+                  <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
+                    <label className="text-xs text-gray-500">Date d'encaissement</label>
+                    <input className={`${inputCls} w-40`} type="date" value={payDraft.date} onChange={e=>setPayDraft(d=>({...d, date:e.target.value}))}/>
+                    <Btn size="sm" variant="success" onClick={confirmPay}>Confirmer</Btn>
+                    <Btn size="sm" variant="secondary" onClick={()=>setPayDraft(null)}>Annuler</Btn>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <RecurringModal open={modalOpen} onClose={()=>{setModalOpen(false);setSelected(null);}} sub={selected} clients={data.clients} onSave={saveSub} onDelete={deleteSub}/>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN APP
 // ============================================================
 // Navigation à 2 niveaux : items seuls ({id}) + groupes dépliables ({group, children}).
@@ -5148,6 +5359,7 @@ const NAV_ITEMS = [
   ]},
   {group:'finances', label:'Finances', icon:'banknote', children:[
     {id:'tresorerie', label:'Trésorerie', icon:'wallet'},
+    {id:'recurring', label:'Revenus récurrents', icon:'refresh-cw'},
     {id:'ledger', label:'Grand Livre', icon:'book-open'},
     {id:'bank', label:'Banque & Frais', icon:'landmark'},
   ]},
@@ -5758,6 +5970,7 @@ function App() {
       case 'crm': return wrap(<CRMModule data={data} setData={setData} onNavigate={onNavigate}/>);
       case 'tasks': return wrap(<TasksModule data={data} setData={setData}/>);
       case 'parcours': return wrap(<ParcoursModule data={data} setData={setData}/>);
+      case 'recurring': return wrap(<RecurringModule data={data} setData={setData}/>);
       case 'bank': return wrap(<BankModule data={data} setData={setData} deepLink={bankDeepLink} clearDeepLink={()=>setBankDeepLink(null)}/>);
       case 'ledger': return wrap(<LedgerModule data={data} onNavigate={onNavigate}/>);
       case 'tresorerie': return wrap(<TresorerieModule data={data}/>);

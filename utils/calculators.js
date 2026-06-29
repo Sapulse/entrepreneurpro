@@ -14,6 +14,11 @@ function buildLedgerEntries(data) {
   (data.expenses||[]).forEach(e => {
     entries.push({id:'exp_'+e.id, sourceId:e.id, type:'expense', date:e.date, label:e.titre||'', montant:-Math.abs(Number(e.montant)||0), auteur:e.payePar||'', source:'Avances', category:e.categorie||''});
   });
+  // Revenus récurrents encaissés — entrée ledger type 'contract' (compte auto dans
+  // CA encaissé / trésorerie / net par associé), marquée source 'Récurrent' pour le Grand Livre.
+  (data.recurringOccurrences||[]).filter(o=>o.statut==='encaissé').forEach(o => {
+    entries.push({id:'rec_'+o.id, sourceId:o.id, type:'contract', date:o.dateEncaissement, label:`${o.client||''}${o.label?' – '+o.label:''}`, montant:Math.abs(Number(o.montant)||0), auteur:'Client', source:'Récurrent', category:'', recurringId:o.recurringId, assignedTo:o.assignedTo||'', payNote:o.notes||''});
+  });
   (data.contracts||[]).forEach(c => {
     if(c.statut==='Annulé') return;
     (c.payments||[]).forEach(p => {
