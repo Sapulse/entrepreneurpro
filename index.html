@@ -2310,9 +2310,9 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
     if(!d.nom) { addToast('Nom requis','error'); return; }
     const cur = form.contacts||[];
     const list = cur.some(c=>c.id===d.id) ? cur.map(c=>c.id===d.id?d:c) : [...cur, d];
-    persistList({contacts:list}); setContactDraft(null); addToast('Contact enregistré','success');
+    persistList({contacts:list}); setContactDraft(null); addToast('Employé enregistré','success');
   };
-  const deleteContact = (id) => { persistList({contacts:(form.contacts||[]).filter(c=>c.id!==id)}); addToast('Contact supprimé','success'); };
+  const deleteContact = (id) => { persistList({contacts:(form.contacts||[]).filter(c=>c.id!==id)}); addToast('Employé supprimé','success'); };
   // Garde-fou URL : n'autorise que http(s). Sans schéma → préfixe https:// ;
   // tout autre schéma (javascript:, data:…) → rejeté (chaîne vide).
   const sanitizeUrl = (raw) => {
@@ -2363,7 +2363,7 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
   const actionCount = (client?.actions||[]).length;
   const contactCount = (form.contacts||[]).length;
   const lienCount = (form.liens||[]).length;
-  const tabs = [{id:'infos',label:'Infos'},{id:'contrats',label:`Contrats (${linkedContracts.length})`},{id:'contacts',label:`Contacts${contactCount>0?` (${contactCount})`:''}`},{id:'liens',label:`Liens${lienCount>0?` (${lienCount})`:''}`},{id:'chrono',label:`Chronologie${actionCount>0?` (${actionCount})`:''}` }];
+  const tabs = [{id:'infos',label:'Infos'},{id:'contrats',label:`Contrats (${linkedContracts.length})`},{id:'contacts',label:`Employés${contactCount>0?` (${contactCount})`:''}`},{id:'liens',label:`Liens${lienCount>0?` (${lienCount})`:''}`},{id:'chrono',label:`Chronologie${actionCount>0?` (${actionCount})`:''}` }];
 
   return (
     <Modal open={open} onClose={onClose} title={client?.entreprise||'Client'} size="md">
@@ -2518,10 +2518,10 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
       {tab==='contacts' && (
         <div className="space-y-3">
           <div className="flex justify-end">
-            <Btn size="sm" variant="primary" onClick={()=>setContactDraft({id:genId(), nom:'', role:'', email:'', tel:''})}>+ Ajouter un contact</Btn>
+            <Btn size="sm" variant="primary" onClick={()=>setContactDraft({id:genId(), nom:'', role:'', email:'', tel:''})}>+ Ajouter un employé</Btn>
           </div>
           {contactDraft && !(form.contacts||[]).some(c=>c.id===contactDraft.id) && renderContactEditor()}
-          {(form.contacts||[]).length===0 && !contactDraft ? <EmptyState message="Aucun contact" icon="users"/> : (
+          {(form.contacts||[]).length===0 && !contactDraft ? <EmptyState message="Aucun employé" icon="users"/> : (
             (form.contacts||[]).map(c => (
               contactDraft && contactDraft.id===c.id ? <div key={c.id}>{renderContactEditor()}</div> : (
                 <div key={c.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
