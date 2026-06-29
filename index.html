@@ -2454,6 +2454,74 @@ function ClientModal({open, onClose, client, contracts, onSave, onDelete, onNavi
 }
 
 // Modale de création client — partagée (CRM + Dashboard). Form défini une seule fois.
+// Complétion auto via l'Annuaire des entreprises (API publique INSEE, sans clé).
+// Bonus NON BLOQUANT : si l'API échoue, la saisie manuelle reste 100% possible.
+// onSelect({entreprise, adresse, siret}) remonte les valeurs choisies au parent.
+function EntrepriseSearch({ onSelect }) {
+  const [q, setQ] = React.useState('');
+  const [results, setResults] = React.useState([]);
+  const [open, setOpen] = React.useState(false);
+  const [status, setStatus] = React.useState('idle'); // idle | loading | done | empty | error
+  const abortRef = React.useRef(null);
+  const timerRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const term = q.trim();
+    if(timerRef.current) clearTimeout(timerRef.current);
+    if(term.length < 3) { if(abortRef.current) abortRef.current.abort(); setResults([]); setOpen(false); setStatus('idle'); return; }
+    timerRef.current = setTimeout(async () => {
+      if(abortRef.current) abortRef.current.abort();               // annule la requête précédente
+      const ctrl = new AbortController(); abortRef.current = ctrl;
+      setStatus('loading'); setOpen(true);
+      try {
+        const res = await fetch(`https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(term)}&page=1&per_page=5`, { signal: ctrl.signal });
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        if(ctrl.signal.aborted) return;                            // réponse obsolète → ignorée
+        const list = (json.results || []).map(r => ({
+          entreprise: r.nom_complet || '',
+          adresse:    (r.siege && r.siege.adresse) || '',
+          siret:      (r.siege && r.siege.siret) || '',
+          ville:      (r.siege && r.siege.libelle_commune) || '',
+        }));
+        setResults(list); setStatus(list.length ? 'done' : 'empty');
+      } catch(e) {
+        if(e.name === 'AbortError') return;                        // requête annulée → ne rien écraser
+        setResults([]); setStatus('error');
+      }
+    }, 350);
+    return () => { if(timerRef.current) clearTimeout(timerRef.current); };
+  }, [q]);
+
+  const pick = (r) => { onSelect({ entreprise:r.entreprise, adresse:r.adresse, siret:r.siret }); setOpen(false); setResults([]); setStatus('idle'); setQ(''); };
+
+  return (
+    <div className="relative">
+      <label className="block text-xs font-medium text-gray-600 mb-1">Rechercher une entreprise (nom ou SIRET)</label>
+      <input className={inputCls} value={q} onChange={e=>setQ(e.target.value)}
+        onFocus={()=>{ if(status !== 'idle') setOpen(true); }}
+        placeholder="🔍 Annuaire des entreprises (INSEE) — optionnel"/>
+      {open && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          {status==='loading' && <div className="px-3 py-2 text-xs text-gray-400">Recherche…</div>}
+          {status==='empty'   && <div className="px-3 py-2 text-xs text-gray-400">Aucune entreprise trouvée — saisie manuelle possible</div>}
+          {status==='error'   && <div className="px-3 py-2 text-xs text-amber-600">Recherche indisponible, remplis manuellement</div>}
+          {status==='done' && results.map((r,i) => (
+            <button type="button" key={r.siret||i} onClick={()=>pick(r)}
+              className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 last:border-0">
+              <div className="text-sm font-semibold text-gray-800 truncate">{r.entreprise || '—'}</div>
+              <div className="text-xs text-gray-400 flex gap-2">
+                {r.ville && <span>{r.ville}</span>}
+                {r.siret && <span className="font-mono">{r.siret}</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NewClientModal({open, onClose, setData}) {
   const addToast = useToast();
   const [newForm, setNewForm] = React.useState({entreprise:'',nom:'',prenom:'',email:'',telephone:'',source:'',etape:'Contact',potentiel:'',notes:'',dateEntree:todayStr(),adresse:'',siret:'',recommandePar:''});
@@ -2468,6 +2536,7 @@ function NewClientModal({open, onClose, setData}) {
   return (
     <Modal open={open} onClose={onClose} title="Nouveau client" size="md">
       <div className="space-y-4">
+        <EntrepriseSearch onSelect={(sel)=>setNewForm(f=>({...f, entreprise:sel.entreprise, adresse:sel.adresse, siret:sel.siret}))}/>
         <div className="grid grid-cols-2 gap-3">
           <div><label className="block text-xs font-medium text-gray-600 mb-1">Entreprise *</label><input className={inputCls} value={newForm.entreprise} onChange={e=>setNewForm(f=>({...f,entreprise:e.target.value}))}/></div>
           <div><label className="block text-xs font-medium text-gray-600 mb-1">Nom *</label><input className={inputCls} value={newForm.nom} onChange={e=>setNewForm(f=>({...f,nom:e.target.value}))}/></div>
