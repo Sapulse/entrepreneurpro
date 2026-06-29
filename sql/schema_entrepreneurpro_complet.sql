@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS clients (
   adresse        TEXT DEFAULT '',       -- app: adresse
   siret          TEXT DEFAULT '',       -- app: siret
   recommande_par TEXT DEFAULT '',       -- app: recommandePar
+  contacts       JSONB DEFAULT '[]'::jsonb,  -- app: contacts [{id,nom,role,email,tel}]
+  liens          JSONB DEFAULT '[]'::jsonb,  -- app: liens [{id,label,url}]
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );

@@ -17,6 +17,18 @@
 const toNum = (x) => { const n = Number(x); return Number.isFinite(n) ? n : 0; };
 
 // ------------------------------------------------------------------
+// Helper : coercition défensive vers tableau pour les colonnes JSONB.
+// Le JSONB devrait revenir déjà parsé (objet/array) ; ce garde-fou couvre
+// aussi le cas où la couche de données le renverrait en STRING (leçon du
+// piège NUMERIC→string sur les montants). Toujours un Array en sortie.
+// ------------------------------------------------------------------
+const asArray = (x) => {
+  if (Array.isArray(x)) return x;
+  if (typeof x === 'string') { try { const v = JSON.parse(x); return Array.isArray(v) ? v : []; } catch(_) { return []; } }
+  return [];
+};
+
+// ------------------------------------------------------------------
 // Helper : supprime les lignes d'une table dont l'id n'est plus dans currentIds
 // ------------------------------------------------------------------
 async function _deleteOrphans(table, currentIds) {
@@ -60,6 +72,9 @@ async function syncClientsToTable(clients) {
       adresse:       c.adresse       || '',
       siret:         c.siret         || '',
       recommande_par: c.recommandePar || c.recommande_par || '',
+      // Listes JSONB — array JS passé tel quel (_apiFetch stringifie déjà le body)
+      contacts:      Array.isArray(c.contacts) ? c.contacts : [],
+      liens:         Array.isArray(c.liens)    ? c.liens    : [],
     }));
     const { error } = await sb.from('clients').upsert(rows);
     if(error) {
@@ -471,6 +486,8 @@ async function loadFromEntityTables() {
       adresse:       r.adresse        || '',
       siret:         r.siret          || '',
       recommandePar: r.recommande_par || '',
+      contacts:      asArray(r.contacts),   // JSONB → toujours un Array (garde-fou défensif)
+      liens:         asArray(r.liens),
       actions: (actionRows || [])
         .filter(a => a.client_id === r.id)
         .map(a => ({
