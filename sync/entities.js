@@ -9,6 +9,14 @@
 // ============================================================
 
 // ------------------------------------------------------------------
+// Helper : coercition numérique tolérante pour les montants.
+// Supabase/PostgREST sérialise les colonnes NUMERIC en STRING (ex. "115046").
+// Une garde stricte `typeof === 'number'` écrirait alors 0 → corruption des
+// montants à la migration cloud→local. toNum() accepte string ET number.
+// ------------------------------------------------------------------
+const toNum = (x) => { const n = Number(x); return Number.isFinite(n) ? n : 0; };
+
+// ------------------------------------------------------------------
 // Helper : supprime les lignes d'une table dont l'id n'est plus dans currentIds
 // ------------------------------------------------------------------
 async function _deleteOrphans(table, currentIds) {
@@ -108,14 +116,14 @@ async function syncContractsToTable(contracts) {
       client_id:      c.clientId      || null,
       client_name:    c.client        || '',
       prestation:     c.prestation    || c.titre || '',
-      montant:        typeof c.montant === 'number' ? c.montant : 0,
+      montant:        toNum(c.montant),
       assigned_to:    c.assignedTo    || c.assignee || '',
       statut:         c.statut        || 'En cours',
       date_signature: c.dateSignature || null,
       date_debut:     c.dateDebut     || null,
       date_fin:       c.dateFin       || null,
       type_paiement:  c.typePaiement  || '',
-      montant_opco:   typeof c.montantOPCO === 'number' ? c.montantOPCO : 0,
+      montant_opco:   toNum(c.montantOPCO),
       statut_opco:    c.statutOPCO    || '',
       notes:          c.notes         || '',
     }));
@@ -132,7 +140,7 @@ async function syncContractsToTable(contracts) {
       (c.payments || []).map(p => ({
         id:          p.id,
         contract_id: c.id,
-        montant:     typeof p.montant === 'number' ? p.montant : (typeof p.amount === 'number' ? p.amount : 0),
+        montant:     toNum(p.montant ?? p.amount),
         date:        p.date        || null,
         type:        p.type        || '',
         statut:      p.statut      || p.status || '',
@@ -167,7 +175,7 @@ async function syncBankTxToTable(transactions) {
     const rows = transactions.map(tx => ({
       id:       tx.id,
       label:    tx.label    || '',
-      montant:  typeof tx.montant === 'number' ? tx.montant : 0,
+      montant:  toNum(tx.montant),
       type:     tx.type     || '',
       date:     tx.date     || null,
       auteur:   tx.auteur   || '',
@@ -202,7 +210,7 @@ async function syncExpensesToTable(expenses) {
     const rows = expenses.map(e => ({
       id:           e.id,
       label:        e.titre       || e.label || '',
-      montant:      typeof e.montant === 'number' ? e.montant : 0,
+      montant:      toNum(e.montant),
       categorie:    e.categorie   || '',
       paye_par:     e.payePar     || e.paye_par || '',
       date:         e.date        || null,
@@ -270,7 +278,7 @@ async function syncSubscriptionsToTable(subscriptions) {
     const rows = subscriptions.map(s => ({
       id:        s.id,
       label:     s.label     || '',
-      montant:   typeof s.montant === 'number' ? s.montant : 0,
+      montant:   toNum(s.montant),
       frequence: s.frequence || s.frequency || '',
       auteur:    s.auteur    || s.assignee  || '',
       actif:     s.actif !== undefined ? Boolean(s.actif) : true,
@@ -326,7 +334,7 @@ async function syncQuotesToTable(quotes) {
       contract_id:     q.contractId     || null,
       titre:           q.titre          || '',
       statut:          q.statut         || 'Brouillon',
-      montant:         typeof q.montant === 'number' ? q.montant : 0,
+      montant:         toNum(q.montant),
       date_creation:   q.dateCreation   || null,
       date_expiration: q.dateExpiration || null,
       notes:           q.notes          || '',
@@ -357,7 +365,7 @@ async function syncInvoicesToTable(invoices) {
       contract_id:  i.contractId   || null,
       titre:        i.titre        || '',
       statut:       i.statut       || 'Non envoyée',
-      montant:      typeof i.montant === 'number' ? i.montant : 0,
+      montant:      toNum(i.montant),
       date_emission: i.dateEmission || null,
       date_echeance: i.dateEcheance || null,
       notes:        i.notes        || '',
@@ -480,7 +488,7 @@ async function loadFromEntityTables() {
       clientId:      c.client_id      || null,
       client:        c.client_name    || '',
       prestation:    c.prestation     || '',
-      montant:       c.montant        || 0,
+      montant:       toNum(c.montant),
       statut:        c.statut         || 'En cours',
       assignedTo:    c.assigned_to    || '',
       impute:        c.impute         || '',
@@ -488,14 +496,14 @@ async function loadFromEntityTables() {
       dateDebut:     c.date_debut     || null,
       dateFin:       c.date_fin       || null,
       typePaiement:  c.type_paiement  || '',
-      montantOPCO:   c.montant_opco   || 0,
+      montantOPCO:   toNum(c.montant_opco),
       statutOPCO:    c.statut_opco    || '',
       notes:         c.notes          || '',
       payments: (paymentRows || [])
         .filter(p => p.contract_id === c.id)
         .map(p => ({
           id:        p.id,
-          montant:   p.montant    || 0,
+          montant:   toNum(p.montant),
           date:      p.date       || null,
           type:      p.type       || '',
           statut:    p.statut     || '',
@@ -510,7 +518,7 @@ async function loadFromEntityTables() {
     const transactions = (txRows || []).map(t => ({
       id:         t.id,
       label:      t.label     || '',
-      montant:    t.montant   || 0,
+      montant:    toNum(t.montant),
       type:       t.type      || '',
       date:       t.date      || null,
       auteur:     t.auteur    || t.assignee || '',
@@ -523,7 +531,7 @@ async function loadFromEntityTables() {
     const expenses = (expenseRows || []).map(e => ({
       id:           e.id,
       titre:        e.label        || '',
-      montant:      e.montant      || 0,
+      montant:      toNum(e.montant),
       categorie:    e.categorie    || '',
       payePar:      e.paye_par     || '',
       impute:       e.impute       || '',
@@ -550,7 +558,7 @@ async function loadFromEntityTables() {
     const subscriptions = (subRows || []).map(s => ({
       id:        s.id,
       label:     s.label     || '',
-      montant:   s.montant   || 0,
+      montant:   toNum(s.montant),
       frequence: s.frequence || '',
       auteur:    s.auteur    || s.assignee || '',
       actif:     s.actif !== undefined ? s.actif : true,
@@ -566,7 +574,7 @@ async function loadFromEntityTables() {
         contractId:     q.contract_id     || null,
         titre:          q.titre           || '',
         statut:         q.statut          || 'Brouillon',
-        montant:        q.montant         || 0,
+        montant:        toNum(q.montant),
         dateCreation:   q.date_creation   || null,
         dateExpiration: q.date_expiration || null,
         notes:          q.notes           || '',
@@ -581,7 +589,7 @@ async function loadFromEntityTables() {
         contractId:   i.contract_id   || null,
         titre:        i.titre         || '',
         statut:       i.statut        || 'Non envoyée',
-        montant:      i.montant       || 0,
+        montant:      toNum(i.montant),
         dateEmission: i.date_emission || null,
         dateEcheance: i.date_echeance || null,
         notes:        i.notes         || '',
