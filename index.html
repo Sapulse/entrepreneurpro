@@ -2967,7 +2967,8 @@ function TaskModal({open, onClose, task, onSave, onDelete}) {
 }
 
 function TaskCard({task, onMove, onEdit, onDelete}) {
-  const isOverdue = task.echeance && task.statut !== 'Terminé' && new Date(task.echeance+'T23:59:59') < new Date();
+  const echDate = toLocalDate(task.echeance, true);
+  const isOverdue = !!echDate && task.statut !== 'Terminé' && echDate < new Date();
   const statusOrder = ['À faire','En cours','Terminé'];
   const idx = statusOrder.indexOf(task.statut);
   const canLeft = idx > 0;
@@ -4588,16 +4589,19 @@ function PilotageModule({data, onNavigate}) {
     // === BLOC 4 – Opérations ===
     const contratsEnCours = data.contracts.filter(c => c.statut === 'En cours').length;
     const today = new Date();
-    const tachesEnRetard = data.tasks.filter(t => t.statut !== 'Terminé' && t.echeance && new Date(t.echeance + 'T23:59:59') < today).length;
+    const tachesEnRetard = data.tasks.filter(t => { if(t.statut === 'Terminé') return false; const d = toLocalDate(t.echeance, true); return !!d && d < today; }).length;
     const dossiersUrgents = data.contracts.filter(c => {
-      if(c.statut !== 'En cours' || !c.dateFin) return false;
-      const diff = (new Date(c.dateFin + 'T00:00:00') - today) / (1000*60*60*24);
+      if(c.statut !== 'En cours') return false;
+      const df = toLocalDate(c.dateFin); if(!df) return false;
+      const diff = (df - today) / (1000*60*60*24);
       return diff >= 0 && diff <= 30;
     }).length;
     const delais = nonAnnule.filter(c => c.payments && c.payments.length > 0 && c.dateDebut).map(c => {
-      const d0 = new Date(c.dateDebut + 'T00:00:00');
+      const d0 = toLocalDate(c.dateDebut);
       const sorted = [...c.payments].sort((a,b) => new Date(a.date) - new Date(b.date));
-      return (new Date(sorted[0].date + 'T00:00:00') - d0) / (1000*60*60*24);
+      const p0 = toLocalDate(sorted[0].date);
+      if(!d0 || !p0) return -1;
+      return (p0 - d0) / (1000*60*60*24);
     }).filter(d => d >= 0 && d < 365);
     const delaiMoyen = delais.length > 0 ? Math.round(delais.reduce((s,d)=>s+d,0)/delais.length) : null;
 
@@ -4709,11 +4713,12 @@ function PilotageModule({data, onNavigate}) {
     // Tâches à traiter, en retard en tête puis par échéance croissante
     const tachesList = data.tasks
       .filter(t => t.statut !== 'Terminé')
-      .map(t => ({
-        id: t.id, titre: t.titre, client: t.client, echeance: t.echeance,
-        priorite: t.priorite, statut: t.statut,
-        overdue: !!(t.echeance && new Date(t.echeance + 'T23:59:59') < today),
-      }))
+      .map(t => {
+        const ed = toLocalDate(t.echeance, true);
+        return { id: t.id, titre: t.titre, client: t.client, echeance: t.echeance,
+          priorite: t.priorite, statut: t.statut,
+          overdue: !!ed && ed < today };
+      })
       .sort((a, b) => {
         if(a.overdue !== b.overdue) return a.overdue ? -1 : 1;
         return (a.echeance ? new Date(a.echeance).getTime() : Infinity) - (b.echeance ? new Date(b.echeance).getTime() : Infinity);
