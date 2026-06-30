@@ -15,7 +15,13 @@ function getPeriodeRange(periode) {
 
 function inPeriode(dateStr, range) {
   if(!range||!dateStr) return true;
-  const d = new Date(dateStr+'T00:00:00');
+  // ⚠️ Piège : les dates chargées depuis la base reviennent en timestamps ISO
+  // ("2026-06-30T00:00:00.000Z"). Concaténer 'T00:00:00' donnerait "...ZT00:00:00"
+  // = Invalid Date → false → tous les filtres par période tombaient à 0.
+  // On normalise sur la partie YYYY-MM-DD (intacte pour une date ISO déjà propre).
+  const datePart = String(dateStr).slice(0, 10);
+  const d = new Date(datePart + 'T00:00:00');
+  if(isNaN(d)) return false;
   return d >= range.start && d <= range.end;
 }
 
